@@ -182,12 +182,17 @@ def halaman_utama():
 
     # --- MENU 1: INPUT LAPORAN ---
     if menu == "📝 Input Laporan Baru":
+        
+        # --- [FITUR BARU] TAMPILKAN PESAN SUKSES DARI STATE ---
+        # Jika ada pesan sukses di memori, tampilkan di paling atas
+        if 'pesan_sukses' in st.session_state and st.session_state['pesan_sukses']:
+            st.success(st.session_state['pesan_sukses'])
+            # Jangan hapus pesan ini otomatis agar user bisa melihatnya terus
+            # Pesan akan hilang saat user melakukan aksi lain (misal mengetik lagi)
+            
         st.subheader("Formulir Upload")
         
-        # --- LOGIKA AUTO CLEAR ---
-        # Kita gunakan 'form_key' di session state.
-        # Setiap kali upload sukses, kita tambah angkanya (+1).
-        # Ini akan memaksa Streamlit membuat ulang widget input baru yang kosong.
+        # Inisialisasi Key Form
         if 'form_key' not in st.session_state:
             st.session_state['form_key'] = 0
             
@@ -195,11 +200,9 @@ def halaman_utama():
         
         with st.container(border=True):
             c1, c2 = st.columns(2)
-            # Tambahkan key dinamis pada setiap input
             with c1: kode = st.text_input("Kode Toko (4 Digit)", max_chars=4, placeholder="CTH: F08C", key=f"kode_{key_now}").upper()
             with c2: nrb = st.text_input("Nomor NRB", placeholder="Nomor Dokumen", key=f"nrb_{key_now}")
             
-            # Date input tidak perlu di-reset ke kosong (default hari ini oke), tapi dikasih key biar konsisten
             tgl = st.date_input("Tanggal NRB", key=f"tgl_{key_now}")
             
             st.markdown("---")
@@ -209,6 +212,10 @@ def halaman_utama():
             kirim_btn = st.button("Kirim Laporan", type="primary", use_container_width=True)
 
         if kirim_btn:
+            # Bersihkan pesan sukses lama jika ada
+            if 'pesan_sukses' in st.session_state:
+                st.session_state['pesan_sukses'] = None
+
             if kode and nrb and foto:
                 if len(kode) != 4: st.error("Kode Toko harus 4 digit!")
                 else:
@@ -231,13 +238,15 @@ def halaman_utama():
                             
                             sukses, pesan = simpan_laporan_aman(entri)
                             if sukses:
-                                st.success(f"✅ Data Berhasil Disimpan! NRB: {nrb}")
-                                time.sleep(2) # Tampilkan pesan sukses sebentar
+                                # --- UPDATE LOGIKA SUKSES ---
+                                # 1. Simpan pesan ke session state
+                                st.session_state['pesan_sukses'] = f"✅ Berhasil! Laporan NRB {nrb} (Toko {kode}) telah tersimpan."
                                 
-                                # GANTI KEY AGAR FORM MERESET DIRI SENDIRI
+                                # 2. Ubah Key Form (Ini akan membuat form kosong saat rerun)
                                 st.session_state['form_key'] += 1 
-                                st.rerun() # Refresh halaman -> Inputan lama hilang karena key baru
                                 
+                                # 3. Reload Halaman (Agar form kembali bersih, tapi pesan sukses muncul di atas)
+                                st.rerun()
                             else: st.error(pesan)
                         except Exception as e: st.error(f"Gagal Upload: {e}")
             else: st.warning("Mohon lengkapi semua data.")
@@ -260,6 +269,7 @@ def halaman_utama():
             
             tab_data, tab_user = st.tabs(["🏭 Cek & Hapus Laporan", "👥 Kelola User & Monitoring"])
             
+            # --- TAB 1: DATA LAPORAN ---
             with tab_data:
                 all_data = get_json_fresh(DATA_DB_PATH)
                 if isinstance(all_data, list) and all_data:
@@ -328,6 +338,7 @@ def halaman_utama():
                         else: st.write("Tidak ada data.")
                 else: st.warning("Belum ada data masuk sama sekali.")
 
+            # --- TAB 2: KELOLA USER ---
             with tab_user:
                 col_reset, col_log = st.columns(2)
                 with col_reset:
