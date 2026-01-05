@@ -256,16 +256,26 @@ def halaman_utama():
                     with c1: filter_toko = st.text_input("Cari Kode Toko:")
                     with c2: filter_nrb = st.text_input("Cari No NRB:")
                     
+                    # Logika Filter
+                    is_searching = filter_toko or filter_nrb
                     mask = pd.Series([True] * len(df_all))
                     if filter_toko: mask &= df_all['Kode_Toko'].str.contains(filter_toko.upper(), na=False)
                     if filter_nrb: mask &= df_all['No_NRB'].str.contains(filter_nrb.upper(), na=False)
                     
                     df_show = df_all[mask].sort_values(by="Waktu_Input", ascending=False)
                     
+                    # LOGIKA LIMIT 5 (UPDATE DI SINI)
+                    if is_searching:
+                        final_df = df_show
+                        st.success(f"🔍 Ditemukan {len(final_df)} data sesuai pencarian.")
+                    else:
+                        final_df = df_show.head(5) # Default cuma 5
+                        st.info(f"📋 Menampilkan 5 Data Terbaru. (Total Data di Server: {len(df_all)}). Gunakan pencarian untuk melihat data lama.")
+
                     st.write("---")
-                    st.info(f"Menampilkan {len(df_show)} data.")
                     
-                    for idx, row in df_show.head(15).iterrows(): 
+                    # TAMPILKAN DATA (Looping final_df yang sudah dilimit)
+                    for idx, row in final_df.iterrows(): 
                         with st.container(border=True):
                             ci, cd, c_del = st.columns([1, 3, 1])
                             with ci: st.image(row['Foto'], width=150)
@@ -287,6 +297,7 @@ def halaman_utama():
                                             time.sleep(1); st.rerun()
                                     if st.button("BATAL", key=f"no_{unik_id}"):
                                         st.session_state[f"confirm_{unik_id}"] = False; st.rerun()
+
                     st.markdown("---")
                     csv = df_show.to_csv(index=False).encode('utf-8')
                     st.download_button("📥 Download Rekap Data (CSV)", csv, "Rekap_Rusak_Pabrik.csv", "text/csv", use_container_width=True)
@@ -317,14 +328,13 @@ def halaman_utama():
                         if st.button("🔄 Refresh List User"): st.rerun()
                         db_users = get_json_fresh(USER_DB_PATH)
                         if db_users:
-                            # --- PERBAIKAN DI SINI: SEARCHABLE SELECTBOX ---
-                            # Mengurutkan user dari A-Z
+                            # FIX PENCARIAN USER (Sorted & None Index)
                             list_user = sorted(list(db_users.keys()))
                             target_user = st.selectbox(
-                                "Cari Username (Ketik nama):", 
+                                "Cari Username (Ketik):", 
                                 list_user,
-                                index=None,  # Default kosong agar user mengetik
-                                placeholder="Ketik untuk mencari...",
+                                index=None, # Default Kosong agar user ngetik/milih
+                                placeholder="Ketik nama user...",
                                 key="sel_user_mgr"
                             )
                             
@@ -349,10 +359,13 @@ def halaman_utama():
                             for tgl, users in log_data.items():
                                 for usr, count in users.items():
                                     log_list.append({"Tanggal": tgl, "User": usr, "Jumlah Akses": count})
+                            
                             df_log = pd.DataFrame(log_list)
                             if not df_log.empty:
                                 df_log = df_log.sort_values(by="Tanggal", ascending=False)
                                 st.dataframe(df_log, use_container_width=True, hide_index=True)
+                                
+                                # DOWNLOAD CSV
                                 csv_log = df_log.to_csv(index=False).encode('utf-8')
                                 st.download_button("📥 Download Data Log (CSV)", csv_log, "Log_Aktivitas_User.csv", "text/csv", use_container_width=True)
                             else: st.info("Data log kosong.")
