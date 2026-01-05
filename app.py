@@ -27,7 +27,6 @@ hide_st_style = """
             footer {visibility: hidden; display: none;}
             .main .block-container {padding-top: 2rem;}
             
-            /* Style Tombol Konfirmasi Hapus */
             .delete-confirm {
                 background-color: #ffcccc;
                 padding: 10px;
@@ -35,6 +34,7 @@ hide_st_style = """
                 border: 1px solid red;
                 text-align: center;
                 margin-top: 5px;
+                color: #8a0000;
             }
             </style>
             """
@@ -113,13 +113,12 @@ def simpan_laporan_aman(entri_baru):
 
 def hapus_satu_file(timestamp_id, url_foto):
     try:
-        # 1. Hapus Data dari JSON
         data_lama = get_json_fresh(DATA_DB_PATH)
         if isinstance(data_lama, list):
+            # Hapus dari list
             data_baru = [d for d in data_lama if d.get('Waktu_Input') != timestamp_id]
             upload_json(data_baru, DATA_DB_PATH)
         
-        # 2. Hapus Gambar di Cloudinary
         if "upload/" in url_foto:
             try:
                 parts = url_foto.split("/upload/")
@@ -267,7 +266,7 @@ def halaman_utama():
                     st.write("---")
                     st.info(f"Menampilkan {len(df_show)} data.")
                     
-                    # TAMPILAN DATA PER BARIS
+                    # TAMPILAN DATA (DENGAN KEY YANG UNIK)
                     for idx, row in df_show.head(15).iterrows(): 
                         with st.container(border=True):
                             ci, cd, c_del = st.columns([1, 3, 1])
@@ -276,31 +275,25 @@ def halaman_utama():
                                 st.write(f"**{row['Kode_Toko']} - NRB {row['No_NRB']}**")
                                 st.caption(f"Tgl NRB: {row['Tanggal_NRB']} | Upload: {row['Waktu_Input']} | User: {row['User']}")
                                 
-                                # FORMAT NAMA FILE DOWNLOAD: KodeToko_NoNRB_Tgl.jpg
                                 clean_name = f"{row['Kode_Toko']}_{row['No_NRB']}_{row['Tanggal_NRB']}"
-                                # Gunakan fl_attachment untuk memaksa download dengan nama khusus
                                 dl_link = row['Foto'].replace("/upload/", f"/upload/fl_attachment:{clean_name}/")
-                                
                                 st.markdown(f"[📥 Download Foto]({dl_link})")
                             
-                            # TOMBOL HAPUS DENGAN KONFIRMASI
                             with c_del:
-                                # Gunakan key unik berdasarkan timestamp
-                                if st.button(f"🗑️ Hapus", key=f"btn_del_{row['Waktu_Input']}"):
-                                    st.session_state[f"confirm_delete_{row['Waktu_Input']}"] = True
+                                # PERBAIKAN DI SINI: Gunakan 'idx' agar key selalu unik
+                                unik_id = f"{idx}_{row['Waktu_Input']}"
                                 
-                                # Tampilkan Konfirmasi jika tombol ditekan
-                                if st.session_state.get(f"confirm_delete_{row['Waktu_Input']}"):
-                                    st.markdown("<div class='delete-confirm'>⚠️ Hapus Data Ini?</div>", unsafe_allow_html=True)
-                                    col_ya, col_tidak = st.columns(2)
-                                    if col_ya.button("YA", key=f"yes_{row['Waktu_Input']}"):
+                                if st.button(f"🗑️ Hapus", key=f"btn_del_{unik_id}"):
+                                    st.session_state[f"confirm_{unik_id}"] = True
+                                
+                                if st.session_state.get(f"confirm_{unik_id}"):
+                                    st.markdown("<div class='delete-confirm'>⚠️ Hapus?</div>", unsafe_allow_html=True)
+                                    if st.button("YA", key=f"yes_{unik_id}"):
                                         if hapus_satu_file(row['Waktu_Input'], row['Foto']):
                                             st.success("Terhapus!")
-                                            time.sleep(1)
-                                            st.rerun()
-                                    if col_tidak.button("BATAL", key=f"no_{row['Waktu_Input']}"):
-                                        st.session_state[f"confirm_delete_{row['Waktu_Input']}"] = False
-                                        st.rerun()
+                                            time.sleep(1); st.rerun()
+                                    if st.button("BATAL", key=f"no_{unik_id}"):
+                                        st.session_state[f"confirm_{unik_id}"] = False; st.rerun()
 
                     st.markdown("---")
                     csv = df_show.to_csv(index=False).encode('utf-8')
@@ -332,7 +325,6 @@ def halaman_utama():
                         if st.button("🔄 Refresh List User"): st.rerun()
                         db_users = get_json_fresh(USER_DB_PATH)
                         if db_users:
-                            # Selectbox ini SUDAH searchable (bisa diketik)
                             target_user = st.selectbox("Cari Username (Ketik):", list(db_users.keys()))
                             new_pass_admin = st.text_input("Password Baru:", type="password", key="adm_new_pass")
                             if st.button("Simpan Password Baru", use_container_width=True):
