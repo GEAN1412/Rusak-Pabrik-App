@@ -115,7 +115,6 @@ def hapus_satu_file(timestamp_id, url_foto):
     try:
         data_lama = get_json_fresh(DATA_DB_PATH)
         if isinstance(data_lama, list):
-            # Hapus dari list
             data_baru = [d for d in data_lama if d.get('Waktu_Input') != timestamp_id]
             upload_json(data_baru, DATA_DB_PATH)
         
@@ -266,7 +265,6 @@ def halaman_utama():
                     st.write("---")
                     st.info(f"Menampilkan {len(df_show)} data.")
                     
-                    # TAMPILAN DATA (DENGAN KEY YANG UNIK)
                     for idx, row in df_show.head(15).iterrows(): 
                         with st.container(border=True):
                             ci, cd, c_del = st.columns([1, 3, 1])
@@ -274,18 +272,13 @@ def halaman_utama():
                             with cd:
                                 st.write(f"**{row['Kode_Toko']} - NRB {row['No_NRB']}**")
                                 st.caption(f"Tgl NRB: {row['Tanggal_NRB']} | Upload: {row['Waktu_Input']} | User: {row['User']}")
-                                
                                 clean_name = f"{row['Kode_Toko']}_{row['No_NRB']}_{row['Tanggal_NRB']}"
                                 dl_link = row['Foto'].replace("/upload/", f"/upload/fl_attachment:{clean_name}/")
                                 st.markdown(f"[📥 Download Foto]({dl_link})")
-                            
                             with c_del:
-                                # PERBAIKAN DI SINI: Gunakan 'idx' agar key selalu unik
                                 unik_id = f"{idx}_{row['Waktu_Input']}"
-                                
                                 if st.button(f"🗑️ Hapus", key=f"btn_del_{unik_id}"):
                                     st.session_state[f"confirm_{unik_id}"] = True
-                                
                                 if st.session_state.get(f"confirm_{unik_id}"):
                                     st.markdown("<div class='delete-confirm'>⚠️ Hapus?</div>", unsafe_allow_html=True)
                                     if st.button("YA", key=f"yes_{unik_id}"):
@@ -294,10 +287,9 @@ def halaman_utama():
                                             time.sleep(1); st.rerun()
                                     if st.button("BATAL", key=f"no_{unik_id}"):
                                         st.session_state[f"confirm_{unik_id}"] = False; st.rerun()
-
                     st.markdown("---")
                     csv = df_show.to_csv(index=False).encode('utf-8')
-                    st.download_button("📥 Download Rekap (CSV)", csv, "Rekap_Rusak_Pabrik.csv", "text/csv", use_container_width=True)
+                    st.download_button("📥 Download Rekap Data (CSV)", csv, "Rekap_Rusak_Pabrik.csv", "text/csv", use_container_width=True)
                     
                     with st.expander("🚨 Hapus Data Bulanan (Danger Zone)"):
                         list_bln = sorted(list(set(df_all['Bulan_Upload'].tolist())))
@@ -325,14 +317,25 @@ def halaman_utama():
                         if st.button("🔄 Refresh List User"): st.rerun()
                         db_users = get_json_fresh(USER_DB_PATH)
                         if db_users:
-                            target_user = st.selectbox("Cari Username (Ketik):", list(db_users.keys()))
+                            # --- PERBAIKAN DI SINI: SEARCHABLE SELECTBOX ---
+                            # Mengurutkan user dari A-Z
+                            list_user = sorted(list(db_users.keys()))
+                            target_user = st.selectbox(
+                                "Cari Username (Ketik nama):", 
+                                list_user,
+                                index=None,  # Default kosong agar user mengetik
+                                placeholder="Ketik untuk mencari...",
+                                key="sel_user_mgr"
+                            )
+                            
                             new_pass_admin = st.text_input("Password Baru:", type="password", key="adm_new_pass")
                             if st.button("Simpan Password Baru", use_container_width=True):
-                                if new_pass_admin:
+                                if target_user and new_pass_admin:
                                     db_users[target_user] = hash_pass(new_pass_admin)
                                     upload_json(db_users, USER_DB_PATH)
                                     st.success(f"Password '{target_user}' diubah!")
                                     time.sleep(1); st.rerun()
+                                elif not target_user: st.warning("Pilih user dulu.")
                                 else: st.warning("Isi password dulu.")
                         else: st.info("Belum ada user.")
 
