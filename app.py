@@ -60,7 +60,6 @@ def init_cloudinary():
     )
 
 def get_json_fresh(public_id):
-    """Ambil data JSON realtime"""
     try:
         resource = cloudinary.api.resource(public_id, resource_type="raw")
         url = resource.get('secure_url')
@@ -184,17 +183,30 @@ def halaman_utama():
     # --- MENU 1: INPUT LAPORAN ---
     if menu == "📝 Input Laporan Baru":
         st.subheader("Formulir Upload")
-        form_placeholder = st.empty()
-        with form_placeholder.container():
-            with st.container(border=True):
-                c1, c2 = st.columns(2)
-                with c1: kode = st.text_input("Kode Toko (4 Digit)", max_chars=4, placeholder="CTH: F08C").upper()
-                with c2: nrb = st.text_input("Nomor NRB", placeholder="Nomor Dokumen")
-                tgl = st.date_input("Tanggal NRB")
-                st.markdown("---")
-                foto = st.file_uploader("Upload Foto BA", type=['jpg', 'jpeg', 'png'])
-                st.caption("ℹ️ Foto akan otomatis dikompres oleh sistem agar ringan.")
-                kirim_btn = st.button("Kirim Laporan", type="primary", use_container_width=True)
+        
+        # --- LOGIKA AUTO CLEAR ---
+        # Kita gunakan 'form_key' di session state.
+        # Setiap kali upload sukses, kita tambah angkanya (+1).
+        # Ini akan memaksa Streamlit membuat ulang widget input baru yang kosong.
+        if 'form_key' not in st.session_state:
+            st.session_state['form_key'] = 0
+            
+        key_now = st.session_state['form_key']
+        
+        with st.container(border=True):
+            c1, c2 = st.columns(2)
+            # Tambahkan key dinamis pada setiap input
+            with c1: kode = st.text_input("Kode Toko (4 Digit)", max_chars=4, placeholder="CTH: F08C", key=f"kode_{key_now}").upper()
+            with c2: nrb = st.text_input("Nomor NRB", placeholder="Nomor Dokumen", key=f"nrb_{key_now}")
+            
+            # Date input tidak perlu di-reset ke kosong (default hari ini oke), tapi dikasih key biar konsisten
+            tgl = st.date_input("Tanggal NRB", key=f"tgl_{key_now}")
+            
+            st.markdown("---")
+            foto = st.file_uploader("Upload Foto BA", type=['jpg', 'jpeg', 'png'], key=f"foto_{key_now}")
+            st.caption("ℹ️ Foto akan otomatis dikompres oleh sistem agar ringan.")
+            
+            kirim_btn = st.button("Kirim Laporan", type="primary", use_container_width=True)
 
         if kirim_btn:
             if kode and nrb and foto:
@@ -220,10 +232,12 @@ def halaman_utama():
                             sukses, pesan = simpan_laporan_aman(entri)
                             if sukses:
                                 st.success(f"✅ Data Berhasil Disimpan! NRB: {nrb}")
-                                time.sleep(3)
-                                form_placeholder.empty()
-                                time.sleep(7)
-                                st.rerun()
+                                time.sleep(2) # Tampilkan pesan sukses sebentar
+                                
+                                # GANTI KEY AGAR FORM MERESET DIRI SENDIRI
+                                st.session_state['form_key'] += 1 
+                                st.rerun() # Refresh halaman -> Inputan lama hilang karena key baru
+                                
                             else: st.error(pesan)
                         except Exception as e: st.error(f"Gagal Upload: {e}")
             else: st.warning("Mohon lengkapi semua data.")
@@ -246,7 +260,6 @@ def halaman_utama():
             
             tab_data, tab_user = st.tabs(["🏭 Cek & Hapus Laporan", "👥 Kelola User & Monitoring"])
             
-            # --- TAB 1: DATA LAPORAN ---
             with tab_data:
                 all_data = get_json_fresh(DATA_DB_PATH)
                 if isinstance(all_data, list) and all_data:
@@ -256,25 +269,22 @@ def halaman_utama():
                     with c1: filter_toko = st.text_input("Cari Kode Toko:")
                     with c2: filter_nrb = st.text_input("Cari No NRB:")
                     
-                    # Logika Filter
-                    is_searching = filter_toko or filter_nrb
                     mask = pd.Series([True] * len(df_all))
                     if filter_toko: mask &= df_all['Kode_Toko'].str.contains(filter_toko.upper(), na=False)
                     if filter_nrb: mask &= df_all['No_NRB'].str.contains(filter_nrb.upper(), na=False)
                     
                     df_show = df_all[mask].sort_values(by="Waktu_Input", ascending=False)
                     
-                    # LOGIKA LIMIT 5 (UPDATE DI SINI)
+                    is_searching = filter_toko or filter_nrb
                     if is_searching:
                         final_df = df_show
-                        st.success(f"🔍 Ditemukan {len(final_df)} data sesuai pencarian.")
+                        st.success(f"🔍 Ditemukan {len(final_df)} data.")
                     else:
-                        final_df = df_show.head(5) # Default cuma 5
-                        st.info(f"📋 Menampilkan 5 Data Terbaru. (Total Data di Server: {len(df_all)}). Gunakan pencarian untuk melihat data lama.")
+                        final_df = df_show.head(5) 
+                        st.info(f"📋 Menampilkan 5 Data Terbaru. Total: {len(df_all)} data.")
 
                     st.write("---")
                     
-                    # TAMPILKAN DATA (Looping final_df yang sudah dilimit)
                     for idx, row in final_df.iterrows(): 
                         with st.container(border=True):
                             ci, cd, c_del = st.columns([1, 3, 1])
@@ -297,7 +307,6 @@ def halaman_utama():
                                             time.sleep(1); st.rerun()
                                     if st.button("BATAL", key=f"no_{unik_id}"):
                                         st.session_state[f"confirm_{unik_id}"] = False; st.rerun()
-
                     st.markdown("---")
                     csv = df_show.to_csv(index=False).encode('utf-8')
                     st.download_button("📥 Download Rekap Data (CSV)", csv, "Rekap_Rusak_Pabrik.csv", "text/csv", use_container_width=True)
@@ -319,7 +328,6 @@ def halaman_utama():
                         else: st.write("Tidak ada data.")
                 else: st.warning("Belum ada data masuk sama sekali.")
 
-            # --- TAB 2: KELOLA USER ---
             with tab_user:
                 col_reset, col_log = st.columns(2)
                 with col_reset:
@@ -328,16 +336,8 @@ def halaman_utama():
                         if st.button("🔄 Refresh List User"): st.rerun()
                         db_users = get_json_fresh(USER_DB_PATH)
                         if db_users:
-                            # FIX PENCARIAN USER (Sorted & None Index)
                             list_user = sorted(list(db_users.keys()))
-                            target_user = st.selectbox(
-                                "Cari Username (Ketik):", 
-                                list_user,
-                                index=None, # Default Kosong agar user ngetik/milih
-                                placeholder="Ketik nama user...",
-                                key="sel_user_mgr"
-                            )
-                            
+                            target_user = st.selectbox("Cari Username (Ketik):", list_user, index=None, placeholder="Ketik nama user...", key="sel_user_mgr")
                             new_pass_admin = st.text_input("Password Baru:", type="password", key="adm_new_pass")
                             if st.button("Simpan Password Baru", use_container_width=True):
                                 if target_user and new_pass_admin:
@@ -359,13 +359,10 @@ def halaman_utama():
                             for tgl, users in log_data.items():
                                 for usr, count in users.items():
                                     log_list.append({"Tanggal": tgl, "User": usr, "Jumlah Akses": count})
-                            
                             df_log = pd.DataFrame(log_list)
                             if not df_log.empty:
                                 df_log = df_log.sort_values(by="Tanggal", ascending=False)
                                 st.dataframe(df_log, use_container_width=True, hide_index=True)
-                                
-                                # DOWNLOAD CSV
                                 csv_log = df_log.to_csv(index=False).encode('utf-8')
                                 st.download_button("📥 Download Data Log (CSV)", csv_log, "Log_Aktivitas_User.csv", "text/csv", use_container_width=True)
                             else: st.info("Data log kosong.")
