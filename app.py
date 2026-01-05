@@ -9,6 +9,7 @@ import requests
 import io
 import json
 import time
+import random # Penting untuk mengatasi bentrok upload
 from datetime import datetime, timedelta
 
 # --- 1. KONFIGURASI HALAMAN ---
@@ -18,7 +19,7 @@ st.set_page_config(
     page_icon="🏭"
 )
 
-# --- 2. CSS UNTUK HIDE GITHUB & STYLE ---
+# --- 2. CSS & STYLE ---
 hide_st_style = """
             <style>
             [data-testid="stToolbar"] {visibility: hidden; display: none !important;}
@@ -32,7 +33,7 @@ st.markdown(hide_st_style, unsafe_allow_html=True)
 # --- 3. KONFIGURASI DATABASE ---
 USER_DB_PATH = "RusakPabrikApp/users.json"
 DATA_DB_PATH = "RusakPabrikApp/data_laporan.json"
-LOG_DB_PATH = "RusakPabrikApp/user_activity.json" # DB Baru untuk Log Login
+LOG_DB_PATH = "RusakPabrikApp/user_activity.json"
 FOTO_FOLDER = "RusakPabrikApp/Foto"
 ADMIN_PASSWORD_ACCESS = "admin123" 
 
@@ -49,17 +50,19 @@ def init_cloudinary():
     )
 
 def get_json_fresh(public_id):
-    """Ambil data JSON realtime"""
+    """Ambil data JSON realtime (bypass cache CDN)"""
     try:
         resource = cloudinary.api.resource(public_id, resource_type="raw")
         url = resource.get('secure_url')
         if url:
-            resp = requests.get(f"{url}?t={int(time.time())}")
+            # Tambahkan timestamp random agar selalu dapat versi terbaru
+            url_fresh = f"{url}?t={int(time.time())}_{random.randint(1,1000)}"
+            resp = requests.get(url_fresh)
             if resp.status_code == 200:
                 return resp.json()
         return {} 
     except:
-        return {}
+        return {} # Return kosong jika file belum ada
 
 def upload_json(data_obj, public_id):
     """Simpan data JSON ke Cloud"""
@@ -74,53 +77,90 @@ def upload_json(data_obj, public_id):
 def hash_pass(password):
     return hashlib.sha256(str.encode(password)).hexdigest()
 
-# --- FUNGSI CATAT LOG LOGIN ---
 def catat_login_activity(username):
     try:
         log_data = get_json_fresh(LOG_DB_PATH)
-        
-        # Waktu Bali (UTC+8)
         now = datetime.utcnow() + timedelta(hours=8)
         tanggal_str = now.strftime("%Y-%m-%d")
-        
-        if tanggal_str not in log_data:
-            log_data[tanggal_str] = {}
-        
-        if username not in log_data[tanggal_str]:
-            log_data[tanggal_str][username] = 0
-            
+        if tanggal_str not in log_data: log_data[tanggal_str] = {}
+        if username not in log_data[tanggal_str]: log_data[tanggal_str][username] = 0
         log_data[tanggal_str][username] += 1
-        
         upload_json(log_data, LOG_DB_PATH)
     except: pass
+
+# --- FUNGSI SIMPAN DATA (ANTI BENTROK / CONCURRENCY FIX) ---
+def simpan_laporan_aman(entri_baru):
+    """
+    Mencoba menyimpan data dengan mekanisme Retry.
+    Jika gagal (karena bentrok), akan mencoba lagi sampai 3x.
+    """
+    max_retries = 3
+    for i in range(max_retries):
+        try:
+            # 1. Ambil data TERBARU
+            data_lama = get_json_fresh(DATA_DB_PATH)
+            if not isinstance(data_lama, list): data_lama = []
+            
+            # 2. Tambahkan data baru
+            data_lama.append(entri_baru)
+            
+            # 3. Upload kembali
+            upload_json(data_lama, DATA_DB_PATH)
+            
+            return True, "Sukses"
+        except Exception as e:
+            # Jika gagal, tunggu waktu acak (0.5 - 2 detik) lalu coba lagi
+            time.sleep(random.uniform(0.5, 2.0))
+            if i == max_retries - 1:
+                return False, f"Gagal menyimpan data setelah {max_retries} percobaan. Server sibuk: {e}"
+    return False, "Unknown Error"
+
+# --- FUNGSI HAPUS SATUAN ---
+def hapus_satu_file(timestamp_id, url_foto):
+    try:
+        # 1. Hapus Data dari JSON
+        data_lama = get_json_fresh(DATA_DB_PATH)
+        if isinstance(data_lama, list):
+            # Filter: Ambil semua data KECUALI yang timestamp-nya cocok
+            data_baru = [d for d in data_lama if d.get('Waktu_Input') != timestamp_id]
+            upload_json(data_baru, DATA_DB_PATH)
+        
+        # 2. Hapus Gambar di Cloudinary (Opsional, biar bersih)
+        if "upload/" in url_foto:
+            # Ambil public_id dari URL
+            # URL: .../upload/v123/RusakPabrikApp/Foto/2026-01/FILE.jpg
+            # Public ID: RusakPabrikApp/Foto/2026-01/FILE
+            try:
+                parts = url_foto.split("/upload/")
+                version_path = parts[1] # v123/Folder/File.jpg
+                path_only = "/".join(version_path.split("/")[1:]) # Folder/File.jpg
+                public_id = path_only.rsplit(".", 1)[0] # Hapus ekstensi .jpg
+                cloudinary.uploader.destroy(public_id)
+            except: pass
+            
+        return True
+    except: return False
 
 # --- 5. LOGIKA HALAMAN ---
 
 def halaman_login():
     st.markdown("<h1 style='text-align: center;'>🏭 Pelaporan Rusak Pabrik</h1>", unsafe_allow_html=True)
-    st.write("")
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
         tab_in, tab_up = st.tabs(["🔐 Login", "📝 Daftar Akun"])
-        
         with tab_in:
             with st.form("frm_login"):
                 u = st.text_input("Username")
                 p = st.text_input("Password", type="password")
-                submit_login = st.form_submit_button("Masuk Sistem", use_container_width=True)
-                
-                if submit_login:
+                if st.form_submit_button("Masuk Sistem", use_container_width=True):
                     with st.spinner("Cek akun..."):
                         db = get_json_fresh(USER_DB_PATH)
                         ph = hash_pass(p)
                         if u in db and db[u] == ph:
                             st.session_state['user_login'] = u
-                            catat_login_activity(u) # Catat Log
+                            catat_login_activity(u)
                             st.rerun()
-                        else:
-                            st.error("Username atau Password Salah!")
-            
+                        else: st.error("Username atau Password Salah!")
             st.markdown("""<a href="https://wa.me/6283114444424?text=Halo%20IC%20Dwi,%20saya%20lupa%20password%20Sistem%20Rusak%20Pabrik" target="_blank" style="text-decoration:none;"><button style="width:100%; background-color:#25D366; color:white; border:none; padding:8px; border-radius:5px; margin-top:10px;">❓ Lupa Password? Hubungi IC Dwi</button></a>""", unsafe_allow_html=True)
         
         with tab_up:
@@ -132,8 +172,7 @@ def halaman_login():
                     if nu and np:
                         with st.spinner("Mendaftarkan..."):
                             db = get_json_fresh(USER_DB_PATH)
-                            if nu in db:
-                                st.error("Username sudah dipakai.")
+                            if nu in db: st.error("Username sudah dipakai.")
                             else:
                                 db[nu] = hash_pass(np)
                                 upload_json(db, USER_DB_PATH)
@@ -173,33 +212,37 @@ def halaman_utama():
             if kode and nrb and foto:
                 if len(kode) != 4: st.error("Kode Toko harus 4 digit!")
                 else:
-                    with st.spinner("Mengirim data..."):
+                    with st.spinner("Mengirim data... (Mohon tunggu, jangan refresh)"):
                         try:
-                            # 1. Upload Cloudinary
                             tgl_str = tgl.strftime("%d%m%Y")
                             bln_folder = datetime.now().strftime("%Y-%m")
-                            nama_file = f"{kode}_{nrb}_{tgl_str}"
+                            # Tambahkan random int di nama file agar unik meski user sama upload barengan
+                            nama_file = f"{kode}_{nrb}_{tgl_str}_{random.randint(100,999)}"
                             path_cloud = f"{FOTO_FOLDER}/{bln_folder}/{nama_file}"
+                            
+                            # Upload Foto
                             res = cloudinary.uploader.upload(foto, resource_type="image", public_id=path_cloud, overwrite=True, transformation=[{'width': 1000, 'crop': 'limit'}, {'quality': 'auto:eco'}])
                             url_foto = res.get('secure_url')
                             
-                            # 2. Simpan DB
-                            data_lama = get_json_fresh(DATA_DB_PATH)
-                            if not isinstance(data_lama, list): data_lama = []
+                            # Simpan Data (Pakai Fungsi Aman Anti Bentrok)
                             entri = {
                                 "Waktu_Input": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                 "Bulan_Upload": bln_folder,
                                 "User": st.session_state['user_login'],
                                 "Kode_Toko": kode, "No_NRB": nrb, "Tanggal_NRB": str(tgl), "Foto": url_foto
                             }
-                            data_lama.append(entri)
-                            upload_json(data_lama, DATA_DB_PATH)
                             
-                            st.success(f"✅ Data Berhasil Disimpan! NRB: {nrb}")
-                            time.sleep(3)
-                            form_placeholder.empty()
-                            time.sleep(7)
-                            st.rerun()
+                            sukses, pesan = simpan_laporan_aman(entri)
+                            
+                            if sukses:
+                                st.success(f"✅ Data Berhasil Disimpan! NRB: {nrb}")
+                                time.sleep(3)
+                                form_placeholder.empty()
+                                time.sleep(7)
+                                st.rerun()
+                            else:
+                                st.error(pesan)
+                                
                         except Exception as e: st.error(f"Gagal Upload: {e}")
             else: st.warning("Mohon lengkapi semua data.")
 
@@ -208,7 +251,6 @@ def halaman_utama():
         st.subheader("Halaman Admin - Pusat Kontrol")
         
         if 'admin_unlocked' not in st.session_state: st.session_state['admin_unlocked'] = False
-            
         if not st.session_state['admin_unlocked']:
             pw = st.text_input("Masukkan Password Admin:", type="password")
             if st.button("Buka Admin Panel"):
@@ -217,13 +259,11 @@ def halaman_utama():
                     st.rerun()
                 else: st.error("Password Salah!")
         else:
-            if st.button("🔒 Logout Admin"):
-                st.session_state['admin_unlocked'] = False
-                st.rerun()
+            if st.button("🔒 Logout Admin"): st.session_state['admin_unlocked'] = False; st.rerun()
             st.markdown("---")
             
             # --- TAB ADMIN ---
-            tab_data, tab_user = st.tabs(["🏭 Cek Data Laporan", "👥 Kelola User & Monitoring"])
+            tab_data, tab_user = st.tabs(["🏭 Cek & Hapus Laporan", "👥 Kelola User & Monitoring"])
             
             # --- TAB 1: DATA LAPORAN ---
             with tab_data:
@@ -231,12 +271,10 @@ def halaman_utama():
                 if isinstance(all_data, list) and all_data:
                     df_all = pd.DataFrame(all_data)
                     
+                    # --- BAGIAN PENCARIAN ---
                     c1, c2, c3 = st.columns([1,1,1])
                     with c1: filter_toko = st.text_input("Cari Kode Toko:")
                     with c2: filter_nrb = st.text_input("Cari No NRB:")
-                    
-                    # TOMBOL CARI
-                    cari_clicked = st.button("🔍 Cari Data", type="primary", use_container_width=True)
                     
                     # LOGIKA FILTER
                     mask = pd.Series([True] * len(df_all))
@@ -245,39 +283,56 @@ def halaman_utama():
                     
                     df_show = df_all[mask].sort_values(by="Waktu_Input", ascending=False)
                     
-                    st.write("")
+                    # --- BAGIAN TAMPILAN DATA & HAPUS SATUAN ---
+                    st.write("---")
+                    st.info(f"Menampilkan {len(df_show)} data.")
                     
-                    # KONDISI TAMPILAN
-                    if cari_clicked or filter_toko or filter_nrb:
-                         st.info(f"Hasil Pencarian: {len(df_show)} data ditemukan.")
-                         final_df = df_show
-                    else:
-                        st.info("Menampilkan 5 Data Terbaru (Gunakan fitur Cari untuk data lama).")
-                        final_df = df_show.head(5) # LIMIT 5
-
-                    # LOOPING TAMPILAN GAMBAR
-                    for idx, row in final_df.iterrows():
-                        with st.expander(f"{row['Kode_Toko']} - {row['No_NRB']} | Tgl: {row['Tanggal_NRB']}"):
-                            ci, cd = st.columns([1, 3])
-                            with ci: st.image(row['Foto'], caption="Bukti Foto", width=200)
+                    # Tampilkan Data
+                    for idx, row in df_show.head(10).iterrows(): # Limit 10 agar tidak berat
+                        with st.container(border=True):
+                            ci, cd, c_del = st.columns([1, 3, 1])
+                            with ci: st.image(row['Foto'], width=150)
                             with cd:
-                                st.write(f"**Penginput:** {row['User']}")
-                                st.write(f"**Waktu:** {row['Waktu_Input']}")
+                                st.write(f"**{row['Kode_Toko']} - NRB {row['No_NRB']}**")
+                                st.caption(f"Tgl NRB: {row['Tanggal_NRB']} | Upload: {row['Waktu_Input']} | User: {row['User']}")
                                 dl_link = row['Foto'].replace("/upload/", "/upload/fl_attachment/")
-                                st.markdown(f"📥 [**DOWNLOAD FOTO ORIGINAL**]({dl_link})")
-                    
-                    st.divider()
+                                st.markdown(f"[📥 Download Foto]({dl_link})")
+                            with c_del:
+                                # TOMBOL HAPUS SATUAN
+                                if st.button(f"🗑️ Hapus", key=f"del_{idx}"):
+                                    if hapus_satu_file(row['Waktu_Input'], row['Foto']):
+                                        st.success("Terhapus!")
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error("Gagal hapus.")
+
+                    st.markdown("---")
                     # DOWNLOAD EXCEL
                     csv = df_show.to_csv(index=False).encode('utf-8')
-                    st.download_button("📥 Download Rekap Data (CSV)", csv, "Rekap_Rusak_Pabrik.csv", "text/csv", use_container_width=True)
-                else:
-                    st.warning("Belum ada data masuk sama sekali.")
+                    st.download_button("📥 Download Rekap (CSV)", csv, "Rekap_Rusak_Pabrik.csv", "text/csv", use_container_width=True)
+                    
+                    # HAPUS BULANAN
+                    with st.expander("🚨 Hapus Data Bulanan (Danger Zone)"):
+                        list_bln = sorted(list(set(df_all['Bulan_Upload'].tolist())))
+                        if list_bln:
+                            del_target = st.selectbox("Pilih Bulan untuk Dihapus Total:", list_bln)
+                            if st.button("🔥 Hapus Permanen Data Bulan Ini"):
+                                new_data = [d for d in all_data if d.get('Bulan_Upload') != del_target]
+                                upload_json(new_data, DATA_DB_PATH)
+                                try:
+                                    folder_path = f"{FOTO_FOLDER}/{del_target}/"
+                                    cloudinary.api.delete_resources_by_prefix(folder_path)
+                                    cloudinary.api.delete_folder(folder_path)
+                                except: pass
+                                st.success("Data bulan terpilih berhasil dihapus!")
+                                time.sleep(2); st.rerun()
+                        else: st.write("Tidak ada data.")
+                else: st.warning("Belum ada data masuk sama sekali.")
 
             # --- TAB 2: KELOLA USER ---
             with tab_user:
                 col_reset, col_log = st.columns(2)
-                
-                # BAGIAN KIRI: GANTI PASSWORD USER
                 with col_reset:
                     st.markdown("#### 🛠️ Ganti Password User")
                     with st.container(border=True):
@@ -286,7 +341,6 @@ def halaman_utama():
                         if db_users:
                             target_user = st.selectbox("Pilih Username:", list(db_users.keys()))
                             new_pass_admin = st.text_input("Password Baru:", type="password", key="adm_new_pass")
-                            
                             if st.button("Simpan Password Baru", use_container_width=True):
                                 if new_pass_admin:
                                     db_users[target_user] = hash_pass(new_pass_admin)
@@ -296,25 +350,20 @@ def halaman_utama():
                                 else: st.warning("Isi password dulu.")
                         else: st.info("Belum ada user.")
 
-                # BAGIAN KANAN: MONITORING LOGIN & DOWNLOAD
                 with col_log:
                     st.markdown("#### 🕵️ Monitoring Akses User")
                     with st.container(border=True):
                         if st.button("🔄 Refresh Log"): st.rerun()
                         log_data = get_json_fresh(LOG_DB_PATH)
-                        
                         if log_data:
                             log_list = []
                             for tgl, users in log_data.items():
                                 for usr, count in users.items():
                                     log_list.append({"Tanggal": tgl, "User": usr, "Jumlah Akses": count})
-                            
                             df_log = pd.DataFrame(log_list)
                             if not df_log.empty:
                                 df_log = df_log.sort_values(by="Tanggal", ascending=False)
                                 st.dataframe(df_log, use_container_width=True, hide_index=True)
-                                
-                                # DOWNLOAD LOG CSV
                                 csv_log = df_log.to_csv(index=False).encode('utf-8')
                                 st.download_button("📥 Download Data Log (CSV)", csv_log, "Log_Aktivitas_User.csv", "text/csv", use_container_width=True)
                             else: st.info("Data log kosong.")
