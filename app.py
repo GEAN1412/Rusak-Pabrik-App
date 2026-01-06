@@ -10,6 +10,8 @@ import io
 import json
 import time
 import random
+import base64
+import os # Tambahan untuk cek file lokal
 from datetime import datetime, timedelta
 
 # --- 1. KONFIGURASI HALAMAN ---
@@ -46,6 +48,9 @@ DATA_DB_PATH = "RusakPabrikApp/data_laporan.json"
 LOG_DB_PATH = "RusakPabrikApp/user_activity.json"
 FOTO_FOLDER = "RusakPabrikApp/Foto"
 ADMIN_PASSWORD_ACCESS = "admin123" 
+
+# NAMA FILE PDF DI GITHUB (Harus sama persis)
+NAMA_FILE_PDF_LOKAL = "format_ba.pdf"
 
 # --- 4. SYSTEM FUNCTIONS ---
 def init_cloudinary():
@@ -183,16 +188,33 @@ def halaman_utama():
     # --- MENU 1: INPUT LAPORAN ---
     if menu == "📝 Input Laporan Baru":
         
-        # --- [FITUR BARU] TAMPILKAN PESAN SUKSES DARI STATE ---
-        # Jika ada pesan sukses di memori, tampilkan di paling atas
-        if 'pesan_sukses' in st.session_state and st.session_state['pesan_sukses']:
-            st.success(st.session_state['pesan_sukses'])
-            # Jangan hapus pesan ini otomatis agar user bisa melihatnya terus
-            # Pesan akan hilang saat user melakukan aksi lain (misal mengetik lagi)
-            
+        # --- FITUR DOWNLOAD PDF (FROM GITHUB LOCAL) ---
+        with st.expander("📄 Download / Lihat Format BA Rusak Pabrik (PDF)"):
+            if os.path.exists(NAMA_FILE_PDF_LOKAL):
+                with open(NAMA_FILE_PDF_LOKAL, "rb") as pdf_file:
+                    PDFbyte = pdf_file.read()
+
+                # Tombol Download
+                st.download_button(
+                    label="📥 Download Format BA (PDF)",
+                    data=PDFbyte,
+                    file_name="Format_BA_Rusak_Pabrik.pdf",
+                    mime="application/pdf"
+                )
+
+                # Preview di Web
+                base64_pdf = base64.b64encode(PDFbyte).decode('utf-8')
+                pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
+                st.markdown(pdf_display, unsafe_allow_html=True)
+            else:
+                st.warning(f"⚠️ File '{NAMA_FILE_PDF_LOKAL}' belum ditemukan di GitHub. Mohon Admin upload file tersebut ke repository.")
+
+        st.write("") 
         st.subheader("Formulir Upload")
         
-        # Inisialisasi Key Form
+        if 'pesan_sukses' in st.session_state and st.session_state['pesan_sukses']:
+            st.success(st.session_state['pesan_sukses'])
+            
         if 'form_key' not in st.session_state:
             st.session_state['form_key'] = 0
             
@@ -212,9 +234,7 @@ def halaman_utama():
             kirim_btn = st.button("Kirim Laporan", type="primary", use_container_width=True)
 
         if kirim_btn:
-            # Bersihkan pesan sukses lama jika ada
-            if 'pesan_sukses' in st.session_state:
-                st.session_state['pesan_sukses'] = None
+            if 'pesan_sukses' in st.session_state: st.session_state['pesan_sukses'] = None
 
             if kode and nrb and foto:
                 if len(kode) != 4: st.error("Kode Toko harus 4 digit!")
@@ -238,14 +258,8 @@ def halaman_utama():
                             
                             sukses, pesan = simpan_laporan_aman(entri)
                             if sukses:
-                                # --- UPDATE LOGIKA SUKSES ---
-                                # 1. Simpan pesan ke session state
                                 st.session_state['pesan_sukses'] = f"✅ Berhasil! Laporan NRB {nrb} (Toko {kode}) telah tersimpan."
-                                
-                                # 2. Ubah Key Form (Ini akan membuat form kosong saat rerun)
                                 st.session_state['form_key'] += 1 
-                                
-                                # 3. Reload Halaman (Agar form kembali bersih, tapi pesan sukses muncul di atas)
                                 st.rerun()
                             else: st.error(pesan)
                         except Exception as e: st.error(f"Gagal Upload: {e}")
@@ -269,7 +283,6 @@ def halaman_utama():
             
             tab_data, tab_user = st.tabs(["🏭 Cek & Hapus Laporan", "👥 Kelola User & Monitoring"])
             
-            # --- TAB 1: DATA LAPORAN ---
             with tab_data:
                 all_data = get_json_fresh(DATA_DB_PATH)
                 if isinstance(all_data, list) and all_data:
@@ -338,7 +351,6 @@ def halaman_utama():
                         else: st.write("Tidak ada data.")
                 else: st.warning("Belum ada data masuk sama sekali.")
 
-            # --- TAB 2: KELOLA USER ---
             with tab_user:
                 col_reset, col_log = st.columns(2)
                 with col_reset:
