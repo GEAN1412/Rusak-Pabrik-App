@@ -11,7 +11,7 @@ import json
 import time
 import random
 import base64
-import os 
+import os
 from datetime import datetime, timedelta
 
 # --- 1. KONFIGURASI HALAMAN ---
@@ -37,20 +37,33 @@ hide_st_style = """
                 text-align: center;
                 margin-top: 5px;
                 color: #8a0000;
+                font-weight: bold;
+            }
+            .month-confirm {
+                background-color: #ffe6e6;
+                padding: 20px;
+                border: 2px solid #ff0000;
+                border-radius: 10px;
+                text-align: center;
+                margin-bottom: 20px;
+                color: #cc0000;
             }
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
-# --- 3. KONFIGURASI DATABASE ---
+# --- 3. KONFIGURASI DATABASE & PASSWORD ---
 USER_DB_PATH = "RusakPabrikApp/users.json"
 DATA_DB_PATH = "RusakPabrikApp/data_laporan.json"
 LOG_DB_PATH = "RusakPabrikApp/user_activity.json"
 FOTO_FOLDER = "RusakPabrikApp/Foto"
-ADMIN_PASSWORD_ACCESS = "admin123" 
 
-# NAMA FILE PDF DI GITHUB (Pastikan nama di GitHub sama persis: format_ba.pdf)
-NAMA_FILE_PDF_LOKAL = "format_ba.pdf"
+# [UPDATE] Password Admin Baru
+ADMIN_PASSWORD_ACCESS = "icnbr034" 
+
+# LINK FILE PENDUKUNG
+URL_FORMAT_BA_PDF = "https://res.cloudinary.com/demo/image/upload/v1/folder/format_ba_contoh.pdf" 
+URL_CONTOH_BA = "https://res.cloudinary.com/demo/image/upload/sample.jpg" 
 
 # --- 4. SYSTEM FUNCTIONS ---
 def init_cloudinary():
@@ -133,6 +146,22 @@ def hapus_satu_file(timestamp_id, url_foto):
         return True
     except: return False
 
+def hapus_data_bulan_tertentu(bulan_target):
+    try:
+        prefix_folder = f"{FOTO_FOLDER}/{bulan_target}/"
+        cloudinary.api.delete_resources_by_prefix(prefix_folder, resource_type="image")
+        try: cloudinary.api.delete_folder(prefix_folder)
+        except: pass 
+
+        data_lama = get_json_fresh(DATA_DB_PATH)
+        if isinstance(data_lama, list):
+            data_baru = [d for d in data_lama if d.get('Bulan_Upload') != bulan_target]
+            upload_json(data_baru, DATA_DB_PATH)
+            
+        return True, f"Semua data bulan {bulan_target} berhasil dihapus permanen."
+    except Exception as e:
+        return False, f"Gagal menghapus: {e}"
+
 # --- 5. LOGIKA HALAMAN ---
 
 def halaman_login():
@@ -188,30 +217,23 @@ def halaman_utama():
     # --- MENU 1: INPUT LAPORAN ---
     if menu == "📝 Input Laporan Baru":
         
-        # --- FITUR DOWNLOAD PDF (FROM GITHUB LOCAL) ---
         with st.expander("📄 Download / Lihat Format BA Rusak Pabrik (PDF)"):
-            if os.path.exists(NAMA_FILE_PDF_LOKAL):
-                with open(NAMA_FILE_PDF_LOKAL, "rb") as pdf_file:
-                    PDFbyte = pdf_file.read()
-
-                # Tombol Download
-                st.download_button(
-                    label="📥 Download Format BA (PDF)",
-                    data=PDFbyte,
-                    file_name="Format_BA_Rusak_Pabrik.pdf",
-                    mime="application/pdf",
-                    use_container_width=True
-                )
-
-                # Preview di Web (Iframe)
-                base64_pdf = base64.b64encode(PDFbyte).decode('utf-8')
-                pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
-                st.markdown(pdf_display, unsafe_allow_html=True)
-            else:
-                # DEBUGGING: Tampilkan daftar file agar ketahuan nama file aslinya
-                st.error(f"⚠️ File '{NAMA_FILE_PDF_LOKAL}' tidak ditemukan!")
-                st.caption(f"Daftar file yang ada di server: {os.listdir()}")
-                st.warning("Solusi: Pastikan nama file di GitHub sama persis dengan 'format_ba.pdf' dan lakukan REBOOT App.")
+            if "cloudinary" in URL_FORMAT_BA_PDF:
+                try:
+                    response = requests.get(URL_FORMAT_BA_PDF)
+                    if response.status_code == 200:
+                        st.download_button(
+                            label="📥 Download Format BA (PDF)",
+                            data=response.content,
+                            file_name="Format_BA_Rusak_Pabrik.pdf",
+                            mime="application/pdf"
+                        )
+                        base64_pdf = base64.b64encode(response.content).decode('utf-8')
+                        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
+                        st.markdown(pdf_display, unsafe_allow_html=True)
+                    else: st.warning("Gagal load PDF.")
+                except: st.warning("Error koneksi.")
+            else: st.info("PDF belum diupload admin.")
 
         st.write("") 
         st.subheader("Formulir Upload")
@@ -219,9 +241,7 @@ def halaman_utama():
         if 'pesan_sukses' in st.session_state and st.session_state['pesan_sukses']:
             st.success(st.session_state['pesan_sukses'])
             
-        if 'form_key' not in st.session_state:
-            st.session_state['form_key'] = 0
-            
+        if 'form_key' not in st.session_state: st.session_state['form_key'] = 0
         key_now = st.session_state['form_key']
         
         with st.container(border=True):
@@ -230,7 +250,6 @@ def halaman_utama():
             with c2: nrb = st.text_input("Nomor NRB", placeholder="Nomor Dokumen", key=f"nrb_{key_now}")
             
             tgl = st.date_input("Tanggal NRB", key=f"tgl_{key_now}")
-            
             st.markdown("---")
             foto = st.file_uploader("Upload Foto BA", type=['jpg', 'jpeg', 'png'], key=f"foto_{key_now}")
             st.caption("ℹ️ Foto akan otomatis dikompres oleh sistem agar ringan.")
@@ -295,14 +314,16 @@ def halaman_utama():
                     c1, c2, c3 = st.columns([1,1,1])
                     with c1: filter_toko = st.text_input("Cari Kode Toko:")
                     with c2: filter_nrb = st.text_input("Cari No NRB:")
+                    with c3: filter_bln = st.text_input("Cari Bulan (YYYY-MM):")
                     
                     mask = pd.Series([True] * len(df_all))
                     if filter_toko: mask &= df_all['Kode_Toko'].str.contains(filter_toko.upper(), na=False)
                     if filter_nrb: mask &= df_all['No_NRB'].str.contains(filter_nrb.upper(), na=False)
+                    if filter_bln: mask &= df_all['Bulan_Upload'].str.contains(filter_bln, na=False)
                     
                     df_show = df_all[mask].sort_values(by="Waktu_Input", ascending=False)
                     
-                    is_searching = filter_toko or filter_nrb
+                    is_searching = filter_toko or filter_nrb or filter_bln
                     if is_searching:
                         final_df = df_show
                         st.success(f"🔍 Ditemukan {len(final_df)} data.")
@@ -338,20 +359,44 @@ def halaman_utama():
                     csv = df_show.to_csv(index=False).encode('utf-8')
                     st.download_button("📥 Download Rekap Data (CSV)", csv, "Rekap_Rusak_Pabrik.csv", "text/csv", use_container_width=True)
                     
+                    st.write("")
                     with st.expander("🚨 Hapus Data Bulanan (Danger Zone)"):
                         list_bln = sorted(list(set(df_all['Bulan_Upload'].tolist())))
                         if list_bln:
                             del_target = st.selectbox("Pilih Bulan untuk Dihapus Total:", list_bln)
-                            if st.button("🔥 Hapus Permanen Data Bulan Ini"):
-                                new_data = [d for d in all_data if d.get('Bulan_Upload') != del_target]
-                                upload_json(new_data, DATA_DB_PATH)
-                                try:
-                                    folder_path = f"{FOTO_FOLDER}/{del_target}/"
-                                    cloudinary.api.delete_resources_by_prefix(folder_path)
-                                    cloudinary.api.delete_folder(folder_path)
-                                except: pass
-                                st.success("Data berhasil dihapus!")
-                                time.sleep(2); st.rerun()
+                            pass_confirm = st.text_input("Konfirmasi Password Hapus (123456):", type="password")
+                            
+                            if 'confirm_month_del' not in st.session_state:
+                                st.session_state['confirm_month_del'] = False
+
+                            if st.button("🔥 Validasi Hapus"):
+                                if pass_confirm == "123456":
+                                    st.session_state['confirm_month_del'] = True
+                                else:
+                                    st.error("Password Salah!")
+                            
+                            if st.session_state['confirm_month_del']:
+                                st.markdown(f"""
+                                <div class='month-confirm' style='background-color: #ffe6e6; padding: 20px; border: 2px solid #ff0000; border-radius: 10px; text-align: center; margin-bottom: 20px; color: #cc0000;'>
+                                    <h3>⚠️ PERINGATAN KERAS!</h3>
+                                    <p>Anda akan menghapus SEMUA data dan foto pada bulan <b>{del_target}</b> secara PERMANEN.</p>
+                                    <p>Apakah Anda yakin?</p>
+                                </div>
+                                """, unsafe_allow_html=True)
+                                
+                                c_y, c_n = st.columns(2)
+                                if c_y.button("YA, SAYA YAKIN HAPUS SEMUA", type="primary"):
+                                    with st.spinner("Menghapus data masif..."):
+                                        sukses_del, msg_del = hapus_data_bulan_tertentu(del_target)
+                                        if sukses_del:
+                                            st.success(msg_del)
+                                            st.session_state['confirm_month_del'] = False
+                                            time.sleep(2); st.rerun()
+                                        else: st.error(msg_del)
+                                if c_n.button("BATALKAN"):
+                                    st.session_state['confirm_month_del'] = False
+                                    st.info("Penghapusan dibatalkan."); st.rerun()
+
                         else: st.write("Tidak ada data.")
                 else: st.warning("Belum ada data masuk sama sekali.")
 
