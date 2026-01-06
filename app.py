@@ -11,7 +11,7 @@ import json
 import time
 import random
 import base64
-import os # Tambahan untuk cek file lokal
+import os 
 from datetime import datetime, timedelta
 
 # --- 1. KONFIGURASI HALAMAN ---
@@ -49,7 +49,7 @@ LOG_DB_PATH = "RusakPabrikApp/user_activity.json"
 FOTO_FOLDER = "RusakPabrikApp/Foto"
 ADMIN_PASSWORD_ACCESS = "admin123" 
 
-# NAMA FILE PDF DI GITHUB (Harus sama persis)
+# NAMA FILE PDF DI GITHUB (Pastikan nama di GitHub sama persis: format_ba.pdf)
 NAMA_FILE_PDF_LOKAL = "format_ba.pdf"
 
 # --- 4. SYSTEM FUNCTIONS ---
@@ -199,15 +199,19 @@ def halaman_utama():
                     label="📥 Download Format BA (PDF)",
                     data=PDFbyte,
                     file_name="Format_BA_Rusak_Pabrik.pdf",
-                    mime="application/pdf"
+                    mime="application/pdf",
+                    use_container_width=True
                 )
 
-                # Preview di Web
+                # Preview di Web (Iframe)
                 base64_pdf = base64.b64encode(PDFbyte).decode('utf-8')
                 pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
                 st.markdown(pdf_display, unsafe_allow_html=True)
             else:
-                st.warning(f"⚠️ File '{NAMA_FILE_PDF_LOKAL}' belum ditemukan di GitHub. Mohon Admin upload file tersebut ke repository.")
+                # DEBUGGING: Tampilkan daftar file agar ketahuan nama file aslinya
+                st.error(f"⚠️ File '{NAMA_FILE_PDF_LOKAL}' tidak ditemukan!")
+                st.caption(f"Daftar file yang ada di server: {os.listdir()}")
+                st.warning("Solusi: Pastikan nama file di GitHub sama persis dengan 'format_ba.pdf' dan lakukan REBOOT App.")
 
         st.write("") 
         st.subheader("Formulir Upload")
