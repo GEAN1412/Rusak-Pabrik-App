@@ -47,7 +47,7 @@ USER_DB_PATH = "RusakPabrikApp/users.json"
 DATA_DB_PATH = "RusakPabrikApp/data_laporan.json"
 LOG_DB_PATH = "RusakPabrikApp/user_activity.json"
 FOTO_FOLDER = "RusakPabrikApp/Foto"
-ADMIN_PASSWORD_ACCESS = "admin123" 
+ADMIN_PASSWORD_ACCESS = "icnbr034" 
 
 # NAMA FILE PDF LOKAL (Harus sama persis dengan yang diupload ke GitHub)
 NAMA_FILE_PDF = "format_ba.pdf"
