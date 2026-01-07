@@ -10,9 +10,8 @@ import io
 import json
 import time
 import random
-import base64
-import os
 from datetime import datetime, timedelta
+import os
 
 # --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(
@@ -21,7 +20,7 @@ st.set_page_config(
     page_icon="🏭"
 )
 
-# --- 2. CSS & STYLE (UPDATE WARNA TOMBOL) ---
+# --- 2. CSS & STYLE ---
 hide_st_style = """
             <style>
             [data-testid="stToolbar"] {visibility: hidden; display: none !important;}
@@ -29,34 +28,6 @@ hide_st_style = """
             footer {visibility: hidden; display: none;}
             .main .block-container {padding-top: 2rem;}
             
-            /* STYLE KHUSUS: TOMBOL LOGIN HIJAU */
-            div[data-testid="stForm"] button {
-                background-color: #28a745 !important; /* Warna Hijau */
-                color: white !important;
-                border: none !important;
-                font-weight: bold !important;
-            }
-            div[data-testid="stForm"] button:hover {
-                background-color: #218838 !important; /* Hijau lebih gelap saat hover */
-                color: white !important;
-            }
-
-            /* STYLE KHUSUS: LINK LUPA PASSWORD POLOS */
-            .plain-link {
-                display: block;
-                text-align: center;
-                margin-top: 15px;
-                color: #888888;
-                text-decoration: none;
-                font-size: 0.9em;
-                cursor: pointer;
-            }
-            .plain-link:hover {
-                color: #28a745;
-                text-decoration: underline;
-            }
-
-            /* Style Tombol Konfirmasi Hapus */
             .delete-confirm {
                 background-color: #ffcccc;
                 padding: 10px;
@@ -97,7 +68,8 @@ def get_json_fresh(public_id):
         resource = cloudinary.api.resource(public_id, resource_type="raw")
         url = resource.get('secure_url')
         if url:
-            resp = requests.get(f"{url}?t={int(time.time())}")
+            url_fresh = f"{url}?t={int(time.time())}_{random.randint(1,1000)}"
+            resp = requests.get(url_fresh)
             if resp.status_code == 200:
                 return resp.json()
         return {} 
@@ -187,8 +159,6 @@ def halaman_login():
             with st.form("frm_login"):
                 u = st.text_input("Username")
                 p = st.text_input("Password", type="password")
-                
-                # TOMBOL INI AKAN BERWARNA HIJAU BERKAT CSS DI ATAS
                 if st.form_submit_button("Masuk Sistem", use_container_width=True):
                     with st.spinner("Cek akun..."):
                         db = get_json_fresh(USER_DB_PATH)
@@ -198,13 +168,7 @@ def halaman_login():
                             catat_login_activity(u)
                             st.rerun()
                         else: st.error("Username atau Password Salah!")
-            
-            # LINK POLOS UNTUK LUPA PASSWORD
-            st.markdown("""
-                <a href="https://wa.me/6283114444424?text=Halo%20IC%20Dwi,%20saya%20lupa%20password%20Sistem%20Rusak%20Pabrik" target="_blank" class="plain-link">
-                    ❓ Lupa Password? Hubungi IC Dwi
-                </a>
-            """, unsafe_allow_html=True)
+            st.markdown("""<a href="https://wa.me/6283114444424?text=Halo%20IC%20Dwi,%20saya%20lupa%20password%20Sistem%20Rusak%20Pabrik" target="_blank" style="text-decoration:none;"><button style="width:100%; background-color:#25D366; color:white; border:none; padding:8px; border-radius:5px; margin-top:10px;">❓ Lupa Password? Hubungi IC Dwi</button></a>""", unsafe_allow_html=True)
         
         with tab_up:
             with st.form("frm_daftar"):
@@ -250,6 +214,7 @@ def halaman_utama():
                     mime="application/pdf",
                     use_container_width=True
                 )
+                import base64
                 base64_pdf = base64.b64encode(PDFbyte).decode('utf-8')
                 pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
                 st.markdown(pdf_display, unsafe_allow_html=True)
@@ -273,8 +238,15 @@ def halaman_utama():
             tgl = st.date_input("Tanggal NRB", key=f"tgl_{key_now}")
             st.markdown("---")
             foto = st.file_uploader("Upload Foto BA", type=['jpg', 'jpeg', 'png'], key=f"foto_{key_now}")
-            st.caption("ℹ️ Foto akan otomatis dikompres oleh sistem agar ringan.")
             
+            # --- [FITUR BARU] INDIKATOR FOTO ---
+            if foto is not None:
+                st.success(f"✅ Foto '{foto.name}' berhasil dimuat! Siap dikirim.")
+                st.image(foto, caption="Preview Foto", width=200)
+            else:
+                st.caption("ℹ️ Foto akan otomatis dikompres oleh sistem agar ringan.")
+            
+            st.markdown("---")
             kirim_btn = st.button("Kirim Laporan", type="primary", use_container_width=True)
 
         if kirim_btn:
