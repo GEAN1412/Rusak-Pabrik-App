@@ -21,7 +21,7 @@ st.set_page_config(
     page_icon="🏭"
 )
 
-# --- 2. CSS & STYLE (UPDATE WARNA TOMBOL) ---
+# --- 2. CSS & STYLE ---
 hide_st_style = """
             <style>
             [data-testid="stToolbar"] {visibility: hidden; display: none !important;}
@@ -29,20 +29,7 @@ hide_st_style = """
             footer {visibility: hidden; display: none;}
             .main .block-container {padding-top: 2rem;}
             
-            /* 1. TOMBOL FORM (LOGIN/DAFTAR) JADI HIJAU */
-            div[data-testid="stForm"] button {
-                background-color: #28a745 !important; /* Hijau */
-                color: white !important;
-                border: none !important;
-                font-weight: bold !important;
-                transition: 0.3s;
-            }
-            div[data-testid="stForm"] button:hover {
-                background-color: #218838 !important; /* Hijau Gelap saat hover */
-                color: white !important;
-            }
-
-            /* 2. LINK LUPA PASSWORD POLOS */
+            /* Style Tombol WA Lupa Password */
             .plain-link {
                 display: block;
                 text-align: center;
@@ -56,8 +43,15 @@ hide_st_style = """
                 color: #28a745;
                 text-decoration: underline;
             }
+            
+            /* Tombol Login Hijau */
+            div[data-testid="stForm"] button {
+                background-color: #28a745 !important;
+                color: white !important;
+                border: none !important;
+                font-weight: bold !important;
+            }
 
-            /* Style Tombol Konfirmasi Hapus */
             .delete-confirm {
                 background-color: #ffcccc;
                 padding: 10px;
@@ -77,8 +71,6 @@ DATA_DB_PATH = "RusakPabrikApp/data_laporan.json"
 LOG_DB_PATH = "RusakPabrikApp/user_activity.json"
 FOTO_FOLDER = "RusakPabrikApp/Foto"
 ADMIN_PASSWORD_ACCESS = "icnbr034" 
-
-# NAMA FILE PDF LOKAL
 NAMA_FILE_PDF = "format_ba.pdf"
 
 # --- 4. SYSTEM FUNCTIONS ---
@@ -98,7 +90,7 @@ def get_json_fresh(public_id):
         resource = cloudinary.api.resource(public_id, resource_type="raw")
         url = resource.get('secure_url')
         if url:
-            resp = requests.get(f"{url}?t={int(time.time())}")
+            resp = requests.get(f"{url}?t={int(time.time())}_{random.randint(1,1000)}")
             if resp.status_code == 200:
                 return resp.json()
         return {} 
@@ -188,8 +180,6 @@ def halaman_login():
             with st.form("frm_login"):
                 u = st.text_input("Username")
                 p = st.text_input("Password", type="password")
-                
-                # TOMBOL MASUK AKAN HIJAU (KARENA DALAM FORM)
                 if st.form_submit_button("Masuk Sistem", use_container_width=True):
                     with st.spinner("Cek akun..."):
                         db = get_json_fresh(USER_DB_PATH)
@@ -200,7 +190,6 @@ def halaman_login():
                             st.rerun()
                         else: st.error("Username atau Password Salah!")
             
-            # LINK POLOS UNTUK LUPA PASSWORD
             st.markdown("""
                 <a href="https://wa.me/6283114444424?text=Halo%20IC%20Dwi,%20saya%20lupa%20password%20Sistem%20Rusak%20Pabrik" target="_blank" class="plain-link">
                     ❓ Lupa Password? Hubungi IC Dwi
@@ -212,7 +201,6 @@ def halaman_login():
                 st.write("Buat Akun Baru")
                 nu = st.text_input("Username Baru (Disarankan Kode Toko)")
                 np = st.text_input("Password Baru", type="password")
-                # TOMBOL DAFTAR JUGA AKAN HIJAU
                 if st.form_submit_button("Daftar Sekarang", use_container_width=True):
                     if nu and np:
                         with st.spinner("Mendaftarkan..."):
@@ -245,13 +233,7 @@ def halaman_utama():
             if os.path.exists(NAMA_FILE_PDF):
                 with open(NAMA_FILE_PDF, "rb") as pdf_file:
                     PDFbyte = pdf_file.read()
-                st.download_button(
-                    label="📥 Download Format BA (PDF)",
-                    data=PDFbyte,
-                    file_name="Format_BA_Rusak_Pabrik.pdf",
-                    mime="application/pdf",
-                    use_container_width=True
-                )
+                st.download_button(label="📥 Download Format BA (PDF)", data=PDFbyte, file_name="Format_BA_Rusak_Pabrik.pdf", mime="application/pdf", use_container_width=True)
                 import base64
                 base64_pdf = base64.b64encode(PDFbyte).decode('utf-8')
                 pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
@@ -262,6 +244,7 @@ def halaman_utama():
         st.write("") 
         st.subheader("Formulir Upload")
         
+        # PESAN SUKSES DI ATAS FORM
         if 'pesan_sukses' in st.session_state and st.session_state['pesan_sukses']:
             st.success(st.session_state['pesan_sukses'])
             
@@ -276,11 +259,20 @@ def halaman_utama():
             tgl = st.date_input("Tanggal NRB", key=f"tgl_{key_now}")
             st.markdown("---")
             foto = st.file_uploader("Upload Foto BA", type=['jpg', 'jpeg', 'png'], key=f"foto_{key_now}")
-            st.caption("ℹ️ Foto akan otomatis dikompres oleh sistem agar ringan.")
             
+            # --- [UPDATE DI SINI] KETERANGAN FOTO BERHASIL DIMUAT ---
+            if foto is not None:
+                st.success(f"✅ Foto '{foto.name}' berhasil dimuat! Siap dikirim.")
+                with st.expander("Lihat Preview Foto"):
+                    st.image(foto, width=200)
+            else:
+                st.caption("ℹ️ Foto akan otomatis dikompres oleh sistem agar ringan.")
+            
+            st.markdown("---")
             kirim_btn = st.button("Kirim Laporan", type="primary", use_container_width=True)
 
         if kirim_btn:
+            # Hapus pesan sukses lama
             if 'pesan_sukses' in st.session_state: st.session_state['pesan_sukses'] = None
 
             if kode and nrb and foto:
