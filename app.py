@@ -10,8 +10,9 @@ import io
 import json
 import time
 import random
-from datetime import datetime, timedelta
+import base64
 import os
+from datetime import datetime, timedelta
 
 # --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(
@@ -20,7 +21,7 @@ st.set_page_config(
     page_icon="🏭"
 )
 
-# --- 2. CSS & STYLE ---
+# --- 2. CSS & STYLE (UPDATE WARNA TOMBOL) ---
 hide_st_style = """
             <style>
             [data-testid="stToolbar"] {visibility: hidden; display: none !important;}
@@ -28,6 +29,35 @@ hide_st_style = """
             footer {visibility: hidden; display: none;}
             .main .block-container {padding-top: 2rem;}
             
+            /* 1. TOMBOL FORM (LOGIN/DAFTAR) JADI HIJAU */
+            div[data-testid="stForm"] button {
+                background-color: #28a745 !important; /* Hijau */
+                color: white !important;
+                border: none !important;
+                font-weight: bold !important;
+                transition: 0.3s;
+            }
+            div[data-testid="stForm"] button:hover {
+                background-color: #218838 !important; /* Hijau Gelap saat hover */
+                color: white !important;
+            }
+
+            /* 2. LINK LUPA PASSWORD POLOS */
+            .plain-link {
+                display: block;
+                text-align: center;
+                margin-top: 15px;
+                color: #888888;
+                text-decoration: none;
+                font-size: 0.9em;
+                cursor: pointer;
+            }
+            .plain-link:hover {
+                color: #28a745;
+                text-decoration: underline;
+            }
+
+            /* Style Tombol Konfirmasi Hapus */
             .delete-confirm {
                 background-color: #ffcccc;
                 padding: 10px;
@@ -68,8 +98,7 @@ def get_json_fresh(public_id):
         resource = cloudinary.api.resource(public_id, resource_type="raw")
         url = resource.get('secure_url')
         if url:
-            url_fresh = f"{url}?t={int(time.time())}_{random.randint(1,1000)}"
-            resp = requests.get(url_fresh)
+            resp = requests.get(f"{url}?t={int(time.time())}")
             if resp.status_code == 200:
                 return resp.json()
         return {} 
@@ -159,6 +188,8 @@ def halaman_login():
             with st.form("frm_login"):
                 u = st.text_input("Username")
                 p = st.text_input("Password", type="password")
+                
+                # TOMBOL MASUK AKAN HIJAU (KARENA DALAM FORM)
                 if st.form_submit_button("Masuk Sistem", use_container_width=True):
                     with st.spinner("Cek akun..."):
                         db = get_json_fresh(USER_DB_PATH)
@@ -168,13 +199,20 @@ def halaman_login():
                             catat_login_activity(u)
                             st.rerun()
                         else: st.error("Username atau Password Salah!")
-            st.markdown("""<a href="https://wa.me/6283114444424?text=Halo%20IC%20Dwi,%20saya%20lupa%20password%20Sistem%20Rusak%20Pabrik" target="_blank" style="text-decoration:none;"><button style="width:100%; background-color:#25D366; color:white; border:none; padding:8px; border-radius:5px; margin-top:10px;">❓ Lupa Password? Hubungi IC Dwi</button></a>""", unsafe_allow_html=True)
+            
+            # LINK POLOS UNTUK LUPA PASSWORD
+            st.markdown("""
+                <a href="https://wa.me/6283114444424?text=Halo%20IC%20Dwi,%20saya%20lupa%20password%20Sistem%20Rusak%20Pabrik" target="_blank" class="plain-link">
+                    ❓ Lupa Password? Hubungi IC Dwi
+                </a>
+            """, unsafe_allow_html=True)
         
         with tab_up:
             with st.form("frm_daftar"):
                 st.write("Buat Akun Baru")
                 nu = st.text_input("Username Baru (Disarankan Kode Toko)")
                 np = st.text_input("Password Baru", type="password")
+                # TOMBOL DAFTAR JUGA AKAN HIJAU
                 if st.form_submit_button("Daftar Sekarang", use_container_width=True):
                     if nu and np:
                         with st.spinner("Mendaftarkan..."):
@@ -238,15 +276,8 @@ def halaman_utama():
             tgl = st.date_input("Tanggal NRB", key=f"tgl_{key_now}")
             st.markdown("---")
             foto = st.file_uploader("Upload Foto BA", type=['jpg', 'jpeg', 'png'], key=f"foto_{key_now}")
+            st.caption("ℹ️ Foto akan otomatis dikompres oleh sistem agar ringan.")
             
-            # --- [FITUR BARU] INDIKATOR FOTO ---
-            if foto is not None:
-                st.success(f"✅ Foto '{foto.name}' berhasil dimuat! Siap dikirim.")
-                st.image(foto, caption="Preview Foto", width=200)
-            else:
-                st.caption("ℹ️ Foto akan otomatis dikompres oleh sistem agar ringan.")
-            
-            st.markdown("---")
             kirim_btn = st.button("Kirim Laporan", type="primary", use_container_width=True)
 
         if kirim_btn:
@@ -307,16 +338,14 @@ def halaman_utama():
                     c1, c2, c3 = st.columns([1,1,1])
                     with c1: filter_toko = st.text_input("Cari Kode Toko:")
                     with c2: filter_nrb = st.text_input("Cari No NRB:")
-                    with c3: filter_bln = st.text_input("Cari Bulan (YYYY-MM):")
                     
                     mask = pd.Series([True] * len(df_all))
                     if filter_toko: mask &= df_all['Kode_Toko'].str.contains(filter_toko.upper(), na=False)
                     if filter_nrb: mask &= df_all['No_NRB'].str.contains(filter_nrb.upper(), na=False)
-                    if filter_bln: mask &= df_all['Bulan_Upload'].str.contains(filter_bln, na=False)
                     
                     df_show = df_all[mask].sort_values(by="Waktu_Input", ascending=False)
                     
-                    is_searching = filter_toko or filter_nrb or filter_bln
+                    is_searching = filter_toko or filter_nrb
                     if is_searching:
                         final_df = df_show
                         st.success(f"🔍 Ditemukan {len(final_df)} data.")
