@@ -10,6 +10,7 @@ import io
 import json
 import time
 import random
+import base64
 import os
 from datetime import datetime, timedelta
 
@@ -28,15 +29,13 @@ hide_st_style = """
             footer {visibility: hidden; display: none;}
             .main .block-container {padding-top: 2rem;}
             
-            /* Tombol Hijau */
             div[data-testid="stForm"] button {
                 background-color: #28a745 !important;
                 color: white !important;
                 border: none !important;
                 font-weight: bold !important;
             }
-            
-            /* Link Polos */
+
             .plain-link {
                 display: block;
                 text-align: center;
@@ -82,7 +81,7 @@ def init_cloudinary():
     )
 
 def get_json_fresh(public_id):
-    """Ambil data JSON realtime dengan bypass cache agresif"""
+    """Ambil data JSON realtime dengan bypass cache"""
     try:
         resource = cloudinary.api.resource(public_id, resource_type="raw")
         url = resource.get('secure_url')
@@ -134,38 +133,6 @@ def simpan_laporan_aman(entri_baru):
                 return False, f"Gagal menyimpan: {e}"
     return False, "Unknown Error"
 
-# --- FUNGSI REGISTRASI AMAN (VERIFIKASI GANDA) ---
-def register_user_aman(username, password):
-    """Mendaftar user dengan pengecekan ulang agar data tidak hilang"""
-    pass_hash = hash_pass(password)
-    
-    # Percobaan simpan (Retry logic)
-    for i in range(3):
-        try:
-            # 1. Ambil Data TERBARU
-            db = get_json_fresh(USER_DB_PATH)
-            
-            # 2. Cek Duplikat
-            if username in db:
-                return False, "Username sudah dipakai."
-            
-            # 3. Tambah & Upload
-            db[username] = pass_hash
-            upload_json(db, USER_DB_PATH)
-            
-            # 4. VERIFIKASI (Jeda sebentar lalu cek lagi)
-            time.sleep(1) 
-            db_check = get_json_fresh(USER_DB_PATH)
-            if username in db_check:
-                return True, "Sukses"
-            else:
-                # Jika gagal verifikasi, loop akan mengulang
-                continue 
-        except:
-            time.sleep(1)
-            
-    return False, "Gagal mendaftar karena koneksi sibuk. Silakan coba lagi."
-
 def hapus_satu_file(timestamp_id, url_foto):
     try:
         data_lama = get_json_fresh(DATA_DB_PATH)
@@ -200,6 +167,34 @@ def hapus_data_bulan_tertentu(bulan_target):
     except Exception as e:
         return False, f"Gagal menghapus: {e}"
 
+# --- FUNGSI REGISTRASI CEPAT (Tanpa Cek Ulang ke Cloud) ---
+def register_user_cepat(username, password):
+    try:
+        # 1. Ambil data saat ini
+        db = get_json_fresh(USER_DB_PATH)
+        
+        # 2. Cek apakah user sudah ada
+        # (Cek juga di cache lokal agar tidak duplikat dengan pendaftaran barusan)
+        if 'local_user_cache' not in st.session_state:
+            st.session_state['local_user_cache'] = {}
+            
+        if username in db or username in st.session_state['local_user_cache']:
+            return False, "Username sudah dipakai."
+        
+        # 3. Hash Password
+        pass_hash = hash_pass(password)
+        
+        # 4. Update ke Cloud (Fire and Forget)
+        db[username] = pass_hash
+        upload_json(db, USER_DB_PATH)
+        
+        # 5. Update Cache Lokal (Ini yang bikin login instan)
+        st.session_state['local_user_cache'][username] = pass_hash
+        
+        return True, "Sukses"
+    except Exception as e:
+        return False, f"Gagal: {e}"
+
 # --- 5. LOGIKA HALAMAN ---
 
 def halaman_login():
@@ -214,16 +209,23 @@ def halaman_login():
                 p = st.text_input("Password", type="password")
                 if st.form_submit_button("Masuk Sistem", use_container_width=True):
                     with st.spinner("Cek akun..."):
-                        # Ambil data FRESH saat login
-                        db = get_json_fresh(USER_DB_PATH)
-                        ph = hash_pass(p)
+                        # Ambil Cloud DB
+                        db_cloud = get_json_fresh(USER_DB_PATH)
                         
-                        if u in db and db[u] == ph:
+                        # Ambil Local Cache (jika ada user barusan daftar)
+                        if 'local_user_cache' not in st.session_state:
+                            st.session_state['local_user_cache'] = {}
+                        
+                        # Gabungkan: Data cloud + Cache
+                        db_final = {**db_cloud, **st.session_state['local_user_cache']}
+                        
+                        ph = hash_pass(p)
+                        if u in db_final and db_final[u] == ph:
                             st.session_state['user_login'] = u
                             catat_login_activity(u)
                             st.rerun()
                         else:
-                            st.error("Username atau Password Salah! (Pastikan huruf besar/kecil sesuai)")
+                            st.error("Username atau Password Salah! (Cek huruf besar/kecil)")
             
             st.markdown("""
                 <a href="https://wa.me/6283114444424?text=Halo%20IC%20Dwi,%20saya%20lupa%20password%20Sistem%20Rusak%20Pabrik" target="_blank" class="plain-link">
@@ -239,16 +241,16 @@ def halaman_login():
                 
                 if st.form_submit_button("Daftar Sekarang", use_container_width=True):
                     if nu and np:
-                        with st.spinner("Mendaftarkan... Mohon tunggu verifikasi..."):
-                            # Gunakan fungsi register yang aman
-                            sukses, pesan = register_user_aman(nu, np)
+                        with st.spinner("Mendaftarkan..."):
+                            # Panggil fungsi registrasi cepat
+                            sukses, pesan = register_user_cepat(nu, np)
                             
                             if sukses:
-                                # AUTO LOGIN
+                                # AUTO LOGIN SETELAH DAFTAR
                                 st.session_state['user_login'] = nu
                                 catat_login_activity(nu)
-                                st.success("✅ Akun Berhasil Disimpan & Terverifikasi! Masuk otomatis...")
-                                time.sleep(1)
+                                st.success("✅ Akun Berhasil Dibuat! Masuk otomatis...")
+                                time.sleep(1) 
                                 st.rerun()
                             else:
                                 st.error(pesan)
@@ -260,6 +262,7 @@ def halaman_utama():
         st.success(f"Login: **{st.session_state['user_login']}**")
         if st.button("🚪 Logout"):
             st.session_state['user_login'] = None
+            if 'local_user_cache' in st.session_state: del st.session_state['local_user_cache']
             st.rerun()
         st.markdown("---")
         st.caption("Monitoring IC Bali - Rusak Pabrik System")
@@ -369,14 +372,16 @@ def halaman_utama():
                     c1, c2, c3 = st.columns([1,1,1])
                     with c1: filter_toko = st.text_input("Cari Kode Toko:")
                     with c2: filter_nrb = st.text_input("Cari No NRB:")
+                    with c3: filter_bln = st.text_input("Cari Bulan (YYYY-MM):")
                     
                     mask = pd.Series([True] * len(df_all))
                     if filter_toko: mask &= df_all['Kode_Toko'].str.contains(filter_toko.upper(), na=False)
                     if filter_nrb: mask &= df_all['No_NRB'].str.contains(filter_nrb.upper(), na=False)
+                    if filter_bln: mask &= df_all['Bulan_Upload'].str.contains(filter_bln, na=False)
                     
                     df_show = df_all[mask].sort_values(by="Waktu_Input", ascending=False)
                     
-                    is_searching = filter_toko or filter_nrb
+                    is_searching = filter_toko or filter_nrb or filter_bln
                     if is_searching:
                         final_df = df_show
                         st.success(f"🔍 Ditemukan {len(final_df)} data.")
