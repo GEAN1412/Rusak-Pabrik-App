@@ -29,12 +29,15 @@ hide_st_style = """
             footer {visibility: hidden; display: none;}
             .main .block-container {padding-top: 2rem;}
             
+            /* Tombol Hijau */
             div[data-testid="stForm"] button {
                 background-color: #28a745 !important;
                 color: white !important;
                 border: none !important;
                 font-weight: bold !important;
             }
+            
+            /* Link Polos */
             .plain-link {
                 display: block;
                 text-align: center;
@@ -45,6 +48,7 @@ hide_st_style = """
                 cursor: pointer;
             }
             .plain-link:hover { color: #28a745; text-decoration: underline; }
+
             .delete-confirm {
                 background-color: #ffcccc;
                 padding: 10px;
@@ -58,8 +62,8 @@ hide_st_style = """
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
-# --- 3. KONFIGURASI DATABASE ---
-USER_DB_PATH = "RusakPabrikApp/users.json"
+# --- 3. KONFIGURASI DATABASE (UPDATE NAMA FILE USER) ---
+USER_DB_PATH = "RusakPabrikApp/user_rusak_pabrik.json"  # <-- NAMA FILE BARU
 DATA_DB_PATH = "RusakPabrikApp/data_laporan.json"
 LOG_DB_PATH = "RusakPabrikApp/user_activity.json"
 FOTO_FOLDER = "RusakPabrikApp/Foto"
@@ -79,22 +83,13 @@ def init_cloudinary():
     )
 
 def get_json_fresh(public_id):
-    """Ambil data JSON realtime dengan Header Anti-Cache"""
+    """Ambil data JSON realtime dengan bypass cache"""
     try:
         resource = cloudinary.api.resource(public_id, resource_type="raw")
         url = resource.get('secure_url')
         if url:
-            # 1. Tambah timestamp random
             url_fresh = f"{url}?t={int(time.time())}_{random.randint(1,99999)}"
-            
-            # 2. Tambah Header agar tidak dicache oleh requests
-            headers = {
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0"
-            }
-            
-            resp = requests.get(url_fresh, headers=headers)
+            resp = requests.get(url_fresh)
             if resp.status_code == 200:
                 return resp.json()
         return {} 
@@ -102,14 +97,12 @@ def get_json_fresh(public_id):
         return {} 
 
 def upload_json(data_obj, public_id):
-    """Simpan data JSON dengan INVALIDATE (Hapus Cache Lama)"""
     json_data = json.dumps(data_obj)
     cloudinary.uploader.upload(
         io.BytesIO(json_data.encode('utf-8')), 
         resource_type="raw", 
         public_id=public_id,
-        overwrite=True,
-        invalidate=True # <--- PENTING: Memaksa server membuang cache lama
+        overwrite=True
     )
 
 def hash_pass(password):
@@ -192,13 +185,12 @@ def halaman_login():
                         # Ambil data FRESH
                         db_cloud = get_json_fresh(USER_DB_PATH)
                         
-                        # Gabungkan dengan cache lokal (jika baru daftar di sesi ini)
+                        # Gabungkan dengan cache lokal
                         if 'local_user_cache' not in st.session_state:
                             st.session_state['local_user_cache'] = {}
                         db_final = {**db_cloud, **st.session_state['local_user_cache']}
                         
                         ph = hash_pass(p)
-                        # Debugging (Opsional, hapus nanti): print(f"User: {u}, DB: {list(db_final.keys())}")
                         
                         if u in db_final and db_final[u] == ph:
                             st.session_state['user_login'] = u
@@ -229,17 +221,18 @@ def halaman_login():
                             if 'local_user_cache' not in st.session_state:
                                 st.session_state['local_user_cache'] = {}
                             
-                            # Cek duplikat di cloud ATAU di lokal
-                            if nu in db_cloud or nu in st.session_state['local_user_cache']:
+                            db_check = {**db_cloud, **st.session_state['local_user_cache']}
+
+                            if nu in db_check:
                                 st.error("Username sudah dipakai.")
                             else:
                                 pass_hash = hash_pass(np)
                                 
-                                # 1. Update ke Cloud (INVALIDATE Cache)
+                                # 1. Update ke Cloud
                                 db_cloud[nu] = pass_hash
                                 upload_json(db_cloud, USER_DB_PATH)
                                 
-                                # 2. Update ke Local Cache (Backup agar bisa login instan)
+                                # 2. Update ke Local Cache
                                 st.session_state['local_user_cache'][nu] = pass_hash
                                 
                                 # 3. Auto Login
@@ -450,7 +443,6 @@ def halaman_utama():
                         else: st.write("Tidak ada data.")
                 else: st.warning("Belum ada data masuk sama sekali.")
 
-            # --- TAB 2: KELOLA USER ---
             with tab_user:
                 col_reset, col_log = st.columns(2)
                 with col_reset:
