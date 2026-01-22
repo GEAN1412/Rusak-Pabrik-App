@@ -10,7 +10,6 @@ import io
 import json
 import time
 import random
-import base64
 import os
 from datetime import datetime, timedelta
 
@@ -21,7 +20,7 @@ st.set_page_config(
     page_icon="🏭"
 )
 
-# --- 2. CSS & STYLE (RESTORE WARNA TOMBOL HIJAU & LINK POLOS) ---
+# --- 2. CSS & STYLE ---
 hide_st_style = """
             <style>
             [data-testid="stToolbar"] {visibility: hidden; display: none !important;}
@@ -29,19 +28,15 @@ hide_st_style = """
             footer {visibility: hidden; display: none;}
             .main .block-container {padding-top: 2rem;}
             
-            /* 1. TOMBOL FORM (LOGIN/DAFTAR) JADI HIJAU */
+            /* Tombol Hijau */
             div[data-testid="stForm"] button {
                 background-color: #28a745 !important;
                 color: white !important;
                 border: none !important;
                 font-weight: bold !important;
             }
-            div[data-testid="stForm"] button:hover {
-                background-color: #218838 !important;
-                color: white !important;
-            }
-
-            /* 2. LINK LUPA PASSWORD POLOS */
+            
+            /* Link Polos */
             .plain-link {
                 display: block;
                 text-align: center;
@@ -51,12 +46,8 @@ hide_st_style = """
                 font-size: 0.9em;
                 cursor: pointer;
             }
-            .plain-link:hover {
-                color: #28a745;
-                text-decoration: underline;
-            }
+            .plain-link:hover { color: #28a745; text-decoration: underline; }
 
-            /* Style Tombol Konfirmasi Hapus */
             .delete-confirm {
                 background-color: #ffcccc;
                 padding: 10px;
@@ -75,7 +66,7 @@ USER_DB_PATH = "RusakPabrikApp/users.json"
 DATA_DB_PATH = "RusakPabrikApp/data_laporan.json"
 LOG_DB_PATH = "RusakPabrikApp/user_activity.json"
 FOTO_FOLDER = "RusakPabrikApp/Foto"
-ADMIN_PASSWORD_ACCESS = "admin123" 
+ADMIN_PASSWORD_ACCESS = "icnbr034"  
 NAMA_FILE_PDF = "format_ba.pdf"
 
 # --- 4. SYSTEM FUNCTIONS ---
@@ -91,11 +82,14 @@ def init_cloudinary():
     )
 
 def get_json_fresh(public_id):
+    """Ambil data JSON realtime dengan bypass cache agresif"""
     try:
         resource = cloudinary.api.resource(public_id, resource_type="raw")
         url = resource.get('secure_url')
         if url:
-            resp = requests.get(f"{url}?t={int(time.time())}_{random.randint(1,1000)}")
+            # Timestamp random memaksa request baru
+            url_fresh = f"{url}?t={int(time.time())}_{random.randint(1,99999)}"
+            resp = requests.get(url_fresh)
             if resp.status_code == 200:
                 return resp.json()
         return {} 
@@ -139,6 +133,38 @@ def simpan_laporan_aman(entri_baru):
             if i == max_retries - 1:
                 return False, f"Gagal menyimpan: {e}"
     return False, "Unknown Error"
+
+# --- FUNGSI REGISTRASI AMAN (VERIFIKASI GANDA) ---
+def register_user_aman(username, password):
+    """Mendaftar user dengan pengecekan ulang agar data tidak hilang"""
+    pass_hash = hash_pass(password)
+    
+    # Percobaan simpan (Retry logic)
+    for i in range(3):
+        try:
+            # 1. Ambil Data TERBARU
+            db = get_json_fresh(USER_DB_PATH)
+            
+            # 2. Cek Duplikat
+            if username in db:
+                return False, "Username sudah dipakai."
+            
+            # 3. Tambah & Upload
+            db[username] = pass_hash
+            upload_json(db, USER_DB_PATH)
+            
+            # 4. VERIFIKASI (Jeda sebentar lalu cek lagi)
+            time.sleep(1) 
+            db_check = get_json_fresh(USER_DB_PATH)
+            if username in db_check:
+                return True, "Sukses"
+            else:
+                # Jika gagal verifikasi, loop akan mengulang
+                continue 
+        except:
+            time.sleep(1)
+            
+    return False, "Gagal mendaftar karena koneksi sibuk. Silakan coba lagi."
 
 def hapus_satu_file(timestamp_id, url_foto):
     try:
@@ -186,23 +212,19 @@ def halaman_login():
             with st.form("frm_login"):
                 u = st.text_input("Username")
                 p = st.text_input("Password", type="password")
-                
-                # TOMBOL HIJAU (CSS)
                 if st.form_submit_button("Masuk Sistem", use_container_width=True):
                     with st.spinner("Cek akun..."):
-                        db_cloud = get_json_fresh(USER_DB_PATH)
-                        if 'local_user_cache' not in st.session_state: st.session_state['local_user_cache'] = {}
-                        db_final = {**db_cloud, **st.session_state['local_user_cache']}
-                        
+                        # Ambil data FRESH saat login
+                        db = get_json_fresh(USER_DB_PATH)
                         ph = hash_pass(p)
-                        if u in db_final and db_final[u] == ph:
+                        
+                        if u in db and db[u] == ph:
                             st.session_state['user_login'] = u
                             catat_login_activity(u)
                             st.rerun()
                         else:
-                            st.error("Username atau Password Salah!")
+                            st.error("Username atau Password Salah! (Pastikan huruf besar/kecil sesuai)")
             
-            # LINK POLOS UNTUK LUPA PASSWORD
             st.markdown("""
                 <a href="https://wa.me/6283114444424?text=Halo%20IC%20Dwi,%20saya%20lupa%20password%20Sistem%20Rusak%20Pabrik" target="_blank" class="plain-link">
                     ❓ Lupa Password? Hubungi IC Dwi
@@ -214,21 +236,22 @@ def halaman_login():
                 st.write("Buat Akun Baru")
                 nu = st.text_input("Username Baru (Disarankan Kode Toko)")
                 np = st.text_input("Password Baru", type="password")
+                
                 if st.form_submit_button("Daftar Sekarang", use_container_width=True):
                     if nu and np:
-                        with st.spinner("Mendaftarkan..."):
-                            db_cloud = get_json_fresh(USER_DB_PATH)
-                            if 'local_user_cache' not in st.session_state: st.session_state['local_user_cache'] = {}
-                            db_check = {**db_cloud, **st.session_state['local_user_cache']}
-
-                            if nu in db_check:
-                                st.error("Username sudah dipakai.")
+                        with st.spinner("Mendaftarkan... Mohon tunggu verifikasi..."):
+                            # Gunakan fungsi register yang aman
+                            sukses, pesan = register_user_aman(nu, np)
+                            
+                            if sukses:
+                                # AUTO LOGIN
+                                st.session_state['user_login'] = nu
+                                catat_login_activity(nu)
+                                st.success("✅ Akun Berhasil Disimpan & Terverifikasi! Masuk otomatis...")
+                                time.sleep(1)
+                                st.rerun()
                             else:
-                                pass_hash = hash_pass(np)
-                                db_cloud[nu] = pass_hash
-                                upload_json(db_cloud, USER_DB_PATH)
-                                st.session_state['local_user_cache'][nu] = pass_hash
-                                st.success("Berhasil! Silakan Login.")
+                                st.error(pesan)
                     else: st.warning("Isi data dengan lengkap.")
 
 def halaman_utama():
@@ -237,7 +260,6 @@ def halaman_utama():
         st.success(f"Login: **{st.session_state['user_login']}**")
         if st.button("🚪 Logout"):
             st.session_state['user_login'] = None
-            if 'local_user_cache' in st.session_state: del st.session_state['local_user_cache']
             st.rerun()
         st.markdown("---")
         st.caption("Monitoring IC Bali - Rusak Pabrik System")
@@ -337,10 +359,8 @@ def halaman_utama():
             if st.button("🔒 Logout Admin"): st.session_state['admin_unlocked'] = False; st.rerun()
             st.markdown("---")
             
-            # --- TABS ADMIN: RESTORE TAB KELOLA USER & MONITORING ---
             tab_data, tab_user = st.tabs(["🏭 Cek & Hapus Laporan", "👥 Kelola User & Monitoring"])
             
-            # --- TAB 1: DATA LAPORAN ---
             with tab_data:
                 all_data = get_json_fresh(DATA_DB_PATH)
                 if isinstance(all_data, list) and all_data:
@@ -349,16 +369,14 @@ def halaman_utama():
                     c1, c2, c3 = st.columns([1,1,1])
                     with c1: filter_toko = st.text_input("Cari Kode Toko:")
                     with c2: filter_nrb = st.text_input("Cari No NRB:")
-                    with c3: filter_bln = st.text_input("Cari Bulan (YYYY-MM):")
                     
                     mask = pd.Series([True] * len(df_all))
                     if filter_toko: mask &= df_all['Kode_Toko'].str.contains(filter_toko.upper(), na=False)
                     if filter_nrb: mask &= df_all['No_NRB'].str.contains(filter_nrb.upper(), na=False)
-                    if filter_bln: mask &= df_all['Bulan_Upload'].str.contains(filter_bln, na=False)
                     
                     df_show = df_all[mask].sort_values(by="Waktu_Input", ascending=False)
                     
-                    is_searching = filter_toko or filter_nrb or filter_bln
+                    is_searching = filter_toko or filter_nrb
                     if is_searching:
                         final_df = df_show
                         st.success(f"🔍 Ditemukan {len(final_df)} data.")
@@ -434,23 +452,16 @@ def halaman_utama():
                         else: st.write("Tidak ada data.")
                 else: st.warning("Belum ada data masuk sama sekali.")
 
-            # --- TAB 2: KELOLA USER & MONITORING (RESTORED) ---
             with tab_user:
                 col_reset, col_log = st.columns(2)
-                
-                # BAGIAN KIRI: GANTI PASSWORD USER & HAPUS USER
                 with col_reset:
-                    st.markdown("#### 🛠️ Kelola User")
+                    st.markdown("#### 🛠️ Ganti Password User")
                     with st.container(border=True):
                         if st.button("🔄 Refresh List User"): st.rerun()
                         db_users = get_json_fresh(USER_DB_PATH)
                         if db_users:
-                            # Searchable Selectbox
                             list_user = sorted(list(db_users.keys()))
                             target_user = st.selectbox("Cari Username (Ketik):", list_user, index=None, placeholder="Ketik nama user...", key="sel_user_mgr")
-                            
-                            st.markdown("---")
-                            st.caption("1. Reset Password:")
                             new_pass_admin = st.text_input("Password Baru:", type="password", key="adm_new_pass")
                             if st.button("Simpan Password Baru", use_container_width=True):
                                 if target_user and new_pass_admin:
@@ -460,37 +471,22 @@ def halaman_utama():
                                     time.sleep(1); st.rerun()
                                 elif not target_user: st.warning("Pilih user dulu.")
                                 else: st.warning("Isi password dulu.")
-
-                            st.markdown("---")
-                            st.caption("2. Hapus User:")
-                            if st.button("❌ Hapus User Ini", type="primary", use_container_width=True):
-                                if target_user:
-                                    del db_users[target_user]
-                                    upload_json(db_users, USER_DB_PATH)
-                                    st.success(f"User '{target_user}' dihapus!")
-                                    time.sleep(1); st.rerun()
-                                else: st.warning("Pilih user dulu.")
                         else: st.info("Belum ada user.")
 
-                # BAGIAN KANAN: MONITORING AKSES
                 with col_log:
                     st.markdown("#### 🕵️ Monitoring Akses User")
                     with st.container(border=True):
                         if st.button("🔄 Refresh Log"): st.rerun()
                         log_data = get_json_fresh(LOG_DB_PATH)
-                        
                         if log_data:
                             log_list = []
                             for tgl, users in log_data.items():
                                 for usr, count in users.items():
                                     log_list.append({"Tanggal": tgl, "User": usr, "Jumlah Akses": count})
-                            
                             df_log = pd.DataFrame(log_list)
                             if not df_log.empty:
                                 df_log = df_log.sort_values(by="Tanggal", ascending=False)
                                 st.dataframe(df_log, use_container_width=True, hide_index=True)
-                                
-                                # DOWNLOAD LOG CSV (RESTORED)
                                 csv_log = df_log.to_csv(index=False).encode('utf-8')
                                 st.download_button("📥 Download Data Log (CSV)", csv_log, "Log_Aktivitas_User.csv", "text/csv", use_container_width=True)
                             else: st.info("Data log kosong.")
