@@ -29,7 +29,13 @@ hide_st_style = """
             footer {visibility: hidden; display: none;}
             .main .block-container {padding-top: 2rem;}
             
-            /* Style Tombol WA Lupa Password */
+            div[data-testid="stForm"] button {
+                background-color: #28a745 !important;
+                color: white !important;
+                border: none !important;
+                font-weight: bold !important;
+            }
+
             .plain-link {
                 display: block;
                 text-align: center;
@@ -42,14 +48,6 @@ hide_st_style = """
             .plain-link:hover {
                 color: #28a745;
                 text-decoration: underline;
-            }
-            
-            /* Tombol Login Hijau */
-            div[data-testid="stForm"] button {
-                background-color: #28a745 !important;
-                color: white !important;
-                border: none !important;
-                font-weight: bold !important;
             }
 
             .delete-confirm {
@@ -70,7 +68,7 @@ USER_DB_PATH = "RusakPabrikApp/users.json"
 DATA_DB_PATH = "RusakPabrikApp/data_laporan.json"
 LOG_DB_PATH = "RusakPabrikApp/user_activity.json"
 FOTO_FOLDER = "RusakPabrikApp/Foto"
-ADMIN_PASSWORD_ACCESS = "icnbr034" 
+ADMIN_PASSWORD_ACCESS = "admin123" 
 NAMA_FILE_PDF = "format_ba.pdf"
 
 # --- 4. SYSTEM FUNCTIONS ---
@@ -86,11 +84,14 @@ def init_cloudinary():
     )
 
 def get_json_fresh(public_id):
+    """Ambil data JSON dengan timestamp untuk hindari cache"""
     try:
         resource = cloudinary.api.resource(public_id, resource_type="raw")
         url = resource.get('secure_url')
         if url:
-            resp = requests.get(f"{url}?t={int(time.time())}_{random.randint(1,1000)}")
+            # Timestamp random memaksa request baru
+            url_fresh = f"{url}?t={int(time.time())}_{random.randint(1,10000)}"
+            resp = requests.get(url_fresh)
             if resp.status_code == 200:
                 return resp.json()
         return {} 
@@ -176,19 +177,31 @@ def halaman_login():
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
         tab_in, tab_up = st.tabs(["🔐 Login", "📝 Daftar Akun"])
+        
         with tab_in:
             with st.form("frm_login"):
                 u = st.text_input("Username")
                 p = st.text_input("Password", type="password")
                 if st.form_submit_button("Masuk Sistem", use_container_width=True):
                     with st.spinner("Cek akun..."):
-                        db = get_json_fresh(USER_DB_PATH)
+                        # [FIX] Ambil dari Cloud, tapi gabungkan dengan Local Cache jika Cloud delay
+                        db_cloud = get_json_fresh(USER_DB_PATH)
+                        
+                        # Cek Local Cache (jika baru daftar)
+                        if 'local_user_cache' not in st.session_state:
+                            st.session_state['local_user_cache'] = {}
+                        
+                        # Gabungkan: Data cloud + Data baru yg ada di session
+                        # Data session menimpa cloud (karena lebih baru)
+                        db_final = {**db_cloud, **st.session_state['local_user_cache']}
+                        
                         ph = hash_pass(p)
-                        if u in db and db[u] == ph:
+                        if u in db_final and db_final[u] == ph:
                             st.session_state['user_login'] = u
                             catat_login_activity(u)
                             st.rerun()
-                        else: st.error("Username atau Password Salah!")
+                        else:
+                            st.error("Username atau Password Salah! (Jika baru daftar, pastikan input benar)")
             
             st.markdown("""
                 <a href="https://wa.me/6283114444424?text=Halo%20IC%20Dwi,%20saya%20lupa%20password%20Sistem%20Rusak%20Pabrik" target="_blank" class="plain-link">
@@ -204,11 +217,28 @@ def halaman_login():
                 if st.form_submit_button("Daftar Sekarang", use_container_width=True):
                     if nu and np:
                         with st.spinner("Mendaftarkan..."):
-                            db = get_json_fresh(USER_DB_PATH)
-                            if nu in db: st.error("Username sudah dipakai.")
+                            # Ambil data terbaru
+                            db_cloud = get_json_fresh(USER_DB_PATH)
+                            
+                            # Inisialisasi Cache Lokal
+                            if 'local_user_cache' not in st.session_state:
+                                st.session_state['local_user_cache'] = {}
+                                
+                            # Gabungkan untuk pengecekan duplikat
+                            db_check = {**db_cloud, **st.session_state['local_user_cache']}
+
+                            if nu in db_check:
+                                st.error("Username sudah dipakai.")
                             else:
-                                db[nu] = hash_pass(np)
-                                upload_json(db, USER_DB_PATH)
+                                pass_hash = hash_pass(np)
+                                
+                                # 1. Update ke Cloud
+                                db_cloud[nu] = pass_hash
+                                upload_json(db_cloud, USER_DB_PATH)
+                                
+                                # 2. Update ke Local Cache (PENTING AGAR BISA LANGSUNG LOGIN)
+                                st.session_state['local_user_cache'][nu] = pass_hash
+                                
                                 st.success("Berhasil! Silakan Login.")
                     else: st.warning("Isi data dengan lengkap.")
 
@@ -218,6 +248,9 @@ def halaman_utama():
         st.success(f"Login: **{st.session_state['user_login']}**")
         if st.button("🚪 Logout"):
             st.session_state['user_login'] = None
+            # Clear cache local saat logout
+            if 'local_user_cache' in st.session_state:
+                del st.session_state['local_user_cache']
             st.rerun()
         st.markdown("---")
         st.caption("Monitoring IC Bali - Rusak Pabrik System")
@@ -233,7 +266,13 @@ def halaman_utama():
             if os.path.exists(NAMA_FILE_PDF):
                 with open(NAMA_FILE_PDF, "rb") as pdf_file:
                     PDFbyte = pdf_file.read()
-                st.download_button(label="📥 Download Format BA (PDF)", data=PDFbyte, file_name="Format_BA_Rusak_Pabrik.pdf", mime="application/pdf", use_container_width=True)
+                st.download_button(
+                    label="📥 Download Format BA (PDF)",
+                    data=PDFbyte,
+                    file_name="Format_BA_Rusak_Pabrik.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
                 import base64
                 base64_pdf = base64.b64encode(PDFbyte).decode('utf-8')
                 pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
@@ -244,7 +283,6 @@ def halaman_utama():
         st.write("") 
         st.subheader("Formulir Upload")
         
-        # PESAN SUKSES DI ATAS FORM
         if 'pesan_sukses' in st.session_state and st.session_state['pesan_sukses']:
             st.success(st.session_state['pesan_sukses'])
             
@@ -260,7 +298,6 @@ def halaman_utama():
             st.markdown("---")
             foto = st.file_uploader("Upload Foto BA", type=['jpg', 'jpeg', 'png'], key=f"foto_{key_now}")
             
-            # --- [UPDATE DI SINI] KETERANGAN FOTO BERHASIL DIMUAT ---
             if foto is not None:
                 st.success(f"✅ Foto '{foto.name}' berhasil dimuat! Siap dikirim.")
                 with st.expander("Lihat Preview Foto"):
@@ -272,7 +309,6 @@ def halaman_utama():
             kirim_btn = st.button("Kirim Laporan", type="primary", use_container_width=True)
 
         if kirim_btn:
-            # Hapus pesan sukses lama
             if 'pesan_sukses' in st.session_state: st.session_state['pesan_sukses'] = None
 
             if kode and nrb and foto:
