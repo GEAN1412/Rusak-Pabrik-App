@@ -241,7 +241,7 @@ def halaman_utama():
                                     st.success("Terhapus!"); time.sleep(1); st.rerun()
                     
                     st.divider()
-                    st.download_button("📥 Download Rekap Laporan (CSV)", df_show.to_csv(index=False), "Rekap_Laporan.csv", "text/csv")
+                    st.download_button("📥 Download Rekap Laporan (CSV)", df_show.to_csv(index=False), "Rekap_Laporan_Rusak_Pabrik.csv", "text/csv")
                 else: st.info("Belum ada data.")
 
             with tab_user:
@@ -266,7 +266,7 @@ def halaman_utama():
                         
                         df_log = pd.DataFrame(log_list).sort_values(by="Tanggal", ascending=False)
                         st.dataframe(df_log, use_container_width=True, hide_index=True)
-                        st.download_button("📥 Download Log Akses (CSV)", df_log.to_csv(index=False), "Log_Akses_User.csv", "text/csv")
+                        st.download_button("📥 Download Log Akses (CSV)", df_log.to_csv(index=False), "Log_Akses_User_Rusak_Pabrik.csv", "text/csv")
                         
                         st.write("#### 🕒 10 User Terbaru yang Akses")
                         st.table(df_log.head(10))
