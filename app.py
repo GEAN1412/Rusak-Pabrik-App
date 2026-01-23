@@ -151,7 +151,7 @@ def halaman_login():
                         st.session_state['user_login'] = u
                         catat_login_activity(u)
                         st.toast(f"Selamat datang, {u}!", icon="👋")
-                        time.sleep(1); st.rerun()
+                        time.sleep(3); st.rerun()
                     else: st.error("Username atau Password Salah!")
             st.markdown(f'<a href="https://wa.me/6283114444424?text=Halo%20IC%20Dwi" target="_blank" class="plain-link">❓ Lupa Password? Hubungi IC Dwi</a>', unsafe_allow_html=True)
         with tab_up:
@@ -252,7 +252,6 @@ def halaman_utama():
                         
                         if st.session_state.get('confirm_bln'):
                             st.error(f"⚠️ Konfirmasi: Masukkan password untuk menghapus seluruh data bulan {target_bln}")
-                            # --- FITUR INPUT PASSWORD BARU ---
                             pass_input = st.text_input("Masukkan Password Keamanan", type="password", key="pass_bulk")
                             
                             if st.button("YA, SAYA YAKIN HAPUS PERMANEN"):
@@ -272,8 +271,15 @@ def halaman_utama():
                     st.write("#### 🛠️ Reset Password")
                     ut, pn = st.text_input("Username"), st.text_input("Pass Baru", type="password")
                     if st.button("Update Password"):
-                        if upload_json({"username": ut, "password": hash_pass(pn)}, get_user_id(ut)):
-                            st.success("Berhasil!"); st.rerun()
+                        if ut and pn:
+                            if upload_json({"username": ut, "password": hash_pass(pn)}, get_user_id(ut)):
+                                # --- FITUR BARU: PESAN SUKSES 5 DETIK ---
+                                st.success("Ubah password sukses")
+                                time.sleep(5)
+                                st.rerun()
+                        else:
+                            st.warning("Mohon isi username dan password baru.")
+
                 with col_l:
                     st.write("#### 🕵️ Monitoring Akses")
                     ld = get_json_direct(LOG_DB_PATH)
@@ -294,7 +300,7 @@ def halaman_utama():
                 if st.button("MIGRASI FOTO DI CLOUD"):
                     with st.spinner("Sinkronisasi..."):
                         s, p = migrasi_foto_cloud()
-                        if s: st.success(p); time.sleep(1); st.rerun()
+                        if s: st.success(p); time.sleep(3); st.rerun()
                         else: st.error(p)
 
 if __name__ == "__main__":
