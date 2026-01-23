@@ -39,7 +39,6 @@ ADMIN_PASSWORD_ACCESS = "icnbr034"
 NAMA_FILE_PDF = "format_ba.pdf"
 
 # --- 4. CORE FUNCTIONS ---
-
 def init_cloudinary():
     if "cloudinary" not in st.secrets:
         st.error("⚠️ Secrets Cloudinary belum dipasang!")
@@ -127,8 +126,7 @@ def migrasi_foto_cloud():
         return True, "Database sudah sinkron dengan Cloudinary."
     except Exception as e: return False, str(e)
 
-# --- 5. HALAMAN LOGIN ---
-
+# --- 5. LOGIN ---
 def halaman_login():
     st.markdown("<h1 style='text-align: center;'>🏭 Pelaporan Rusak Pabrik</h1>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns([1, 2, 1])
@@ -156,8 +154,7 @@ def halaman_login():
                                 st.success("Akun berhasil dibuat!")
                     else: st.warning("Lengkapi data.")
 
-# --- 6. HALAMAN UTAMA ---
-
+# --- 6. UTAMA ---
 def halaman_utama():
     with st.sidebar:
         st.success(f"Login: **{st.session_state['user_login']}**")
@@ -211,12 +208,15 @@ def halaman_utama():
                             ci.image(row['Foto'], width=150)
                             cd.write(f"**{row['Kode_Toko']} - NRB {row['No_NRB']}**")
                             cd.caption(f"User: {row['User']} | Upload: {row['Waktu_Input']}")
-                            st.markdown(f"[📥 Download Foto]({row['Foto'].replace('/upload/', f'/upload/fl_attachment:{row['Kode_Toko']}_{row['No_NRB']}/')})")
+                            # Fix Syntax: Gunakan kutip ganda untuk f-string luar
+                            clean_name = f"{row['Kode_Toko']}_{row['No_NRB']}_{row['Tanggal_NRB']}"
+                            dl_link = row['Foto'].replace('/upload/', f'/upload/fl_attachment:{clean_name}/')
+                            st.markdown(f"[📥 Download Foto]({dl_link})")
                             if c_del.button("🗑️", key=f"del_{row['Waktu_Input']}"):
                                 if hapus_satu_file(row['Waktu_Input'], row['Foto']): st.success("Dihapus!"); st.rerun()
                     st.divider()
-                    st.download_button("📥 Download Rekap Laporan (CSV)", df.to_csv(index=False), "Rekap_Laporan_Rusak_Pabrik.csv")
-                else: st.info("Tidak ada data.")
+                    st.download_button("📥 Download Rekap Laporan (CSV)", df.to_csv(index=False), "Rekap_Laporan.csv")
+                else: st.info("Belum ada data.")
 
             with t2:
                 col_reset, col_log = st.columns([1, 1.5])
@@ -233,8 +233,7 @@ def halaman_utama():
                         l_list = [{"Tanggal": t, "User": u, "Akses": c} for t, us in log_data.items() for u, c in us.items()]
                         df_log = pd.DataFrame(l_list).sort_values(by="Tanggal", ascending=False)
                         st.dataframe(df_log, use_container_width=True, hide_index=True)
-                        # --- RESTORED DOWNLOAD LOG CSV ---
-                        st.download_button("📥 Download Log Akses (CSV)", df_log.to_csv(index=False), "Log_Akses_User_Rusak_Pabrik.csv", "text/csv", use_container_width=True)
+                        st.download_button("📥 Download Log Akses (CSV)", df_log.to_csv(index=False), "Log_Akses_User.csv", "text/csv", use_container_width=True)
                     else: st.info("Data log tidak ditemukan.")
 
             with t3:
