@@ -38,6 +38,7 @@ st.markdown("""
     .plain-link {
         display: block; text-align: center; margin-top: 15px;
         color: #888888; text-decoration: none; font-size: 0.9em;
+        cursor: pointer;
     }
     .plain-link:hover { color: #28a745; text-decoration: underline; }
 
@@ -133,7 +134,15 @@ def halaman_login():
                         st.session_state['user_login'] = u
                         catat_login_activity(u)
                         st.success("Berhasil!"); time.sleep(0.5); st.rerun()
-                    else: st.error("Username/Password Salah!")
+                    else: st.error("Username atau Password Salah!")
+            
+            # --- MENU LUPA PASSWORD (RESTORED) ---
+            st.markdown("""
+                <a href="https://wa.me/6283114444424?text=Halo%20IC%20Dwi,%20saya%20lupa%20password%20Sistem%20Rusak%20Pabrik" target="_blank" class="plain-link">
+                    ❓ Lupa Password? Hubungi IC Dwi
+                </a>
+            """, unsafe_allow_html=True)
+            
         with tab_up:
             with st.form("frm_daftar"):
                 nu = st.text_input("Username Baru").strip()
@@ -255,7 +264,7 @@ def halaman_utama():
                     if logs: st.write(logs)
 
             with tab_migrasi:
-                st.warning("Gunakan fitur ini hanya jika Anda baru saja beralih dari file JSON tunggal.")
+                st.warning("Gunakan fitur ini hanya sekali setelah update skrip.")
                 if st.button("JALANKAN MIGRASI"):
                     old_data = get_json_direct(OLD_USER_DB)
                     if old_data:
