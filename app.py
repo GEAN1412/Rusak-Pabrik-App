@@ -189,7 +189,7 @@ def halaman_utama():
                         data_db.append(entri)
                         if upload_json(data_db, DATA_DB_PATH):
                             st.toast("Upload BA Berhasil!", icon="✅")
-                            time.sleep(2); st.rerun()
+                            time.sleep(5); st.rerun()
                 else: st.warning("Lengkapi data.")
 
     elif menu == "🔐 Menu Admin":
