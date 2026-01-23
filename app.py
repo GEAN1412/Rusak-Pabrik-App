@@ -92,10 +92,8 @@ def hapus_satu_file(timestamp_id, url_foto):
         upload_json(data_baru, DATA_DB_PATH)
         if "upload/" in url_foto:
             try:
-                # Perbaikan parsing public_id untuk file di folder "Home" atau subfolder
-                if "/upload/" in url_foto:
-                    p_id = url_foto.split("/upload/")[1].split("/", 1)[1].rsplit(".", 1)[0]
-                    cloudinary.uploader.destroy(p_id)
+                p_id = url_foto.split("/upload/")[1].split("/", 1)[1].rsplit(".", 1)[0]
+                cloudinary.uploader.destroy(p_id)
             except: pass
         return True
     except: return False
@@ -136,7 +134,8 @@ def halaman_login():
         tab_in, tab_up = st.tabs(["🔐 Login", "📝 Daftar Akun"])
         with tab_in:
             with st.form("frm_login"):
-                u, p = st.text_input("Username").strip(), st.text_input("Password", type="password")
+                u = st.text_input("Username").strip()
+                p = st.text_input("Password", type="password")
                 if st.form_submit_button("Masuk Sistem", use_container_width=True):
                     user_data = get_json_direct(get_user_id(u))
                     if user_data and user_data.get('password') == hash_pass(p):
@@ -145,6 +144,25 @@ def halaman_login():
                         st.success("Login Berhasil!"); time.sleep(0.5); st.rerun()
                     else: st.error("Username atau Password Salah!")
             st.markdown(f'<a href="https://wa.me/6283114444424?text=Halo%20IC%20Dwi" target="_blank" class="plain-link">❓ Lupa Password? Hubungi IC Dwi</a>', unsafe_allow_html=True)
+        
+        # --- TAB DAFTAR AKUN (DIKEMBALIKAN) ---
+        with tab_up:
+            with st.form("frm_daftar"):
+                st.write("Buat Akun Baru")
+                nu = st.text_input("Username Baru").strip()
+                np = st.text_input("Password Baru", type="password")
+                if st.form_submit_button("Daftar Sekarang", use_container_width=True):
+                    if nu and np:
+                        with st.spinner("Mengecek ketersediaan akun..."):
+                            if get_json_direct(get_user_id(nu)):
+                                st.error("Username sudah terdaftar! Silakan login.")
+                            else:
+                                if upload_json({"username": nu, "password": hash_pass(np)}, get_user_id(nu)):
+                                    st.success(f"Akun {nu} berhasil dibuat! Silakan login di tab sebelah.")
+                                else:
+                                    st.error("Gagal menyimpan akun. Coba lagi nanti.")
+                    else:
+                        st.warning("Mohon isi username dan password baru.")
 
 # --- 6. UTAMA ---
 def halaman_utama():
@@ -185,6 +203,7 @@ def halaman_utama():
         else:
             if st.button("🔒 Logout Admin"): st.session_state['admin_unlocked'] = False; st.rerun()
             t1, t2, t3 = st.tabs(["📊 Laporan", "👥 User & Log", "🚀 Migrasi"])
+            
             with t1:
                 all_data = get_json_direct(DATA_DB_PATH)
                 if all_data:
@@ -194,7 +213,7 @@ def halaman_utama():
                     if ft: df = df[df['Kode_Toko'].str.contains(ft.upper(), na=False)]
                     if fn: df = df[df['No_NRB'].str.contains(fn, na=False)]
                     
-                    # Gunakan enumerate untuk mendapatkan index unik (idx)
+                    # Fix Duplicate Key: Menggunakan indeks baris (idx)
                     for idx, row in (df.head(5) if not (ft or fn) else df).iterrows():
                         with st.container(border=True):
                             ci, cd, c_del = st.columns([1, 3, 1])
@@ -202,15 +221,13 @@ def halaman_utama():
                             cd.write(f"**{row['Kode_Toko']} - NRB {row['No_NRB']}**")
                             cd.caption(f"User: {row['User']} | Upload: {row['Waktu_Input']}")
                             
-                            # --- FIX SYNTAX ERROR & DOWNLOAD LINK ---
-                            clean_name = f"{row['Kode_Toko']}_{row['No_NRB']}_{row['Tanggal_NRB']}"
-                            dl_link = row['Foto'].replace('/upload/', f'/upload/fl_attachment:{clean_name}/')
-                            st.markdown(f"[📥 Download Foto]({dl_link})")
+                            # Fix Syntax: Helper variable untuk download link
+                            clean_n = f"{row['Kode_Toko']}_{row['No_NRB']}_{row['Tanggal_NRB']}"
+                            dl_l = row['Foto'].replace('/upload/', f'/upload/fl_attachment:{clean_n}/')
+                            st.markdown(f"[📥 Download Foto]({dl_l})")
                             
-                            # --- FIX DUPLICATE KEY: Tambahkan idx pada key ---
                             if c_del.button("🗑️", key=f"del_{idx}_{row['Waktu_Input']}"):
-                                if hapus_satu_file(row['Waktu_Input'], row['Foto']): 
-                                    st.success("Dihapus!"); st.rerun()
+                                if hapus_satu_file(row['Waktu_Input'], row['Foto']): st.success("Dihapus!"); st.rerun()
                     st.divider()
                     st.download_button("📥 Download Rekap Laporan (CSV)", df.to_csv(index=False), "Rekap_Laporan_Rusak_Pabrik.csv")
 
