@@ -479,7 +479,7 @@ def halaman_utama():
                                 df_log = df_log.sort_values(by="Tanggal", ascending=False)
                                 st.dataframe(df_log, use_container_width=True, hide_index=True)
                                 csv_log = df_log.to_csv(index=False).encode('utf-8')
-                                st.download_button("📥 Download Data Log (CSV)", csv_log, "Log_Aktivitas_User.csv", "text/csv", use_container_width=True)
+                                st.download_button("📥 Download Data Log (CSV)", csv_log, "Log_Aktivitas_User_Rusak_Pabrik.csv", "text/csv", use_container_width=True)
                             else: st.info("Data log kosong.")
                         else: st.info("Belum ada aktivitas.")
 
