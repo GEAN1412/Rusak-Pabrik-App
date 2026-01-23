@@ -41,11 +41,6 @@ st.markdown("""
         cursor: pointer;
     }
     .plain-link:hover { color: #28a745; text-decoration: underline; }
-
-    .delete-confirm {
-        background-color: #ffcccc; padding: 10px; border-radius: 5px;
-        border: 1px solid red; text-align: center; margin-top: 5px; color: #8a0000;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -136,12 +131,7 @@ def halaman_login():
                         st.success("Berhasil!"); time.sleep(0.5); st.rerun()
                     else: st.error("Username atau Password Salah!")
             
-            # --- MENU LUPA PASSWORD (RESTORED) ---
-            st.markdown("""
-                <a href="https://wa.me/6283114444424?text=Halo%20IC%20Dwi,%20saya%20lupa%20password%20Sistem%20Rusak%20Pabrik" target="_blank" class="plain-link">
-                    ❓ Lupa Password? Hubungi IC Dwi
-                </a>
-            """, unsafe_allow_html=True)
+            st.markdown(f'<a href="https://wa.me/6283114444424?text=Halo%20IC%20Dwi,%20saya%20lupa%20password%20Sistem%20Rusak%20Pabrik" target="_blank" class="plain-link">❓ Lupa Password? Hubungi IC Dwi</a>', unsafe_allow_html=True)
             
         with tab_up:
             with st.form("frm_daftar"):
@@ -187,8 +177,9 @@ def halaman_utama():
             if st.button("Kirim Laporan", type="primary", use_container_width=True):
                 if kode and nrb and foto:
                     with st.spinner("Sedang Mengirim..."):
+                        tgl_str = tgl.strftime("%d%m%Y")
                         bln = datetime.now().strftime("%Y-%m")
-                        nama_f = f"{kode}_{nrb}_{random.randint(100,999)}"
+                        nama_f = f"{kode}_{nrb}_{tgl_str}_{random.randint(100,999)}"
                         res = cloudinary.uploader.upload(foto, public_id=f"{FOTO_FOLDER}/{bln}/{nama_f}", transformation=[{'width': 1000, 'quality': 'auto'}])
                         entri = {
                             "Waktu_Input": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -211,7 +202,7 @@ def halaman_utama():
                 else: st.error("Password Salah!")
         else:
             if st.button("🔒 Logout Admin"): st.session_state['admin_unlocked'] = False; st.rerun()
-            tab_data, tab_user, tab_migrasi = st.tabs(["📊 Cek & Hapus Laporan", "👥 Kelola User", "🚀 Migrasi"])
+            tab_data, tab_user, tab_migrasi = st.tabs(["📊 Cek & Hapus Laporan", "👥 Kelola User & Log", "🚀 Migrasi"])
 
             with tab_data:
                 all_data = get_json_direct(DATA_DB_PATH)
@@ -220,58 +211,74 @@ def halaman_utama():
                     c1, c2 = st.columns(2)
                     f_toko = c1.text_input("Cari Kode Toko:")
                     f_nrb = c2.text_input("Cari No NRB:")
-                    
                     mask = pd.Series([True] * len(df_all))
                     if f_toko: mask &= df_all['Kode_Toko'].str.contains(f_toko.upper(), na=False)
                     if f_nrb: mask &= df_all['No_NRB'].str.contains(f_nrb.upper(), na=False)
-                    
                     df_show = df_all[mask].sort_values(by="Waktu_Input", ascending=False)
-                    
                     if f_toko or f_nrb:
                         final_df = df_show
                         st.success(f"🔍 Ditemukan {len(final_df)} data.")
                     else:
                         final_df = df_show.head(5)
                         st.info(f"📋 Menampilkan 5 Data Terbaru. Total: {len(df_all)} data.")
-
+                    
                     for idx, row in final_df.iterrows():
                         with st.container(border=True):
                             ci, cd, c_del = st.columns([1, 3, 1])
                             ci.image(row['Foto'], width=150)
-                            cd.write(f"**{row['Kode_Toko']} - NRB {row['No_NRB']}**")
-                            cd.caption(f"Tgl NRB: {row['Tanggal_NRB']} | Upload: {row['Waktu_Input']} | User: {row['User']}")
+                            
+                            with cd:
+                                st.write(f"**{row['Kode_Toko']} - NRB {row['No_NRB']}**")
+                                st.caption(f"Tgl NRB: {row['Tanggal_NRB']} | Upload: {row['Waktu_Input']} | User: {row['User']}")
+                                
+                                # --- TOMBOL DOWNLOAD FOTO (RESTORED) ---
+                                clean_name = f"{row['Kode_Toko']}_{row['No_NRB']}_{row['Tanggal_NRB']}"
+                                dl_link = row['Foto'].replace("/upload/", f"/upload/fl_attachment:{clean_name}/")
+                                st.markdown(f"[📥 Download Foto]({dl_link})")
+                                
                             if c_del.button("🗑️ Hapus", key=f"del_{row['Waktu_Input']}"):
                                 if hapus_satu_file(row['Waktu_Input'], row['Foto']):
                                     st.success("Terhapus!"); time.sleep(1); st.rerun()
                     
                     st.divider()
-                    st.download_button("📥 Download Rekap (CSV)", df_show.to_csv(index=False), "Rekap.csv", "text/csv")
+                    st.download_button("📥 Download Rekap Laporan (CSV)", df_show.to_csv(index=False), "Rekap_Laporan.csv", "text/csv")
                 else: st.info("Belum ada data.")
 
             with tab_user:
-                col_reset, col_log = st.columns(2)
+                col_reset, col_log = st.columns([1, 1.5])
                 with col_reset:
                     st.write("#### 🛠️ Ganti Password")
-                    u_target = st.text_input("Username")
+                    u_target = st.text_input("Username Target")
                     p_new = st.text_input("Password Baru", type="password")
                     if st.button("Simpan Password Baru"):
                         if u_target and p_new:
                             upload_json({"username": u_target, "password": hash_pass(p_new)}, get_user_id(u_target))
-                            st.success("Berhasil!"); time.sleep(1); st.rerun()
+                            st.success("Password Diperbarui!"); time.sleep(1); st.rerun()
+
                 with col_log:
-                    st.write("#### 🕵️ Log Akses")
-                    logs = get_json_direct(LOG_DB_PATH)
-                    if logs: st.write(logs)
+                    st.write("#### 🕵️ Monitoring Akses")
+                    log_data = get_json_direct(LOG_DB_PATH)
+                    if log_data:
+                        log_list = []
+                        for tgl, users in log_data.items():
+                            for usr, count in users.items():
+                                log_list.append({"Tanggal": tgl, "User": usr, "Jumlah Akses": count})
+                        
+                        df_log = pd.DataFrame(log_list).sort_values(by="Tanggal", ascending=False)
+                        st.dataframe(df_log, use_container_width=True, hide_index=True)
+                        st.download_button("📥 Download Log Akses (CSV)", df_log.to_csv(index=False), "Log_Akses_User.csv", "text/csv")
+                        
+                        st.write("#### 🕒 10 User Terbaru yang Akses")
+                        st.table(df_log.head(10))
+                    else: st.info("Belum ada aktivitas log.")
 
             with tab_migrasi:
-                st.warning("Gunakan fitur ini hanya sekali setelah update skrip.")
                 if st.button("JALANKAN MIGRASI"):
                     old_data = get_json_direct(OLD_USER_DB)
                     if old_data:
                         for user, hp in old_data.items():
                             upload_json({"username": user, "password": hp}, get_user_id(user))
-                        st.success("✅ Migrasi Berhasil!"); time.sleep(1); st.rerun()
-                    else: st.error("Data lama tidak ditemukan.")
+                        st.success("Migrasi Berhasil!"); time.sleep(1); st.rerun()
 
 # --- RUN ---
 if __name__ == "__main__":
