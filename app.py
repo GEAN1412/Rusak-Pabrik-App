@@ -92,8 +92,10 @@ def hapus_satu_file(timestamp_id, url_foto):
         upload_json(data_baru, DATA_DB_PATH)
         if "upload/" in url_foto:
             try:
-                p_id = url_foto.split("/upload/")[1].split("/", 1)[1].rsplit(".", 1)[0]
-                cloudinary.uploader.destroy(p_id)
+                # Perbaikan parsing public_id untuk file di folder "Home" atau subfolder
+                if "/upload/" in url_foto:
+                    p_id = url_foto.split("/upload/")[1].split("/", 1)[1].rsplit(".", 1)[0]
+                    cloudinary.uploader.destroy(p_id)
             except: pass
         return True
     except: return False
@@ -123,7 +125,7 @@ def migrasi_foto_cloud():
         if added_count > 0:
             upload_json(current_data, DATA_DB_PATH)
             return True, f"Berhasil menarik {added_count} foto ke database."
-        return True, "Database sudah sinkron dengan Cloudinary."
+        return True, "Database sudah sinkron."
     except Exception as e: return False, str(e)
 
 # --- 5. LOGIN ---
@@ -143,16 +145,6 @@ def halaman_login():
                         st.success("Login Berhasil!"); time.sleep(0.5); st.rerun()
                     else: st.error("Username atau Password Salah!")
             st.markdown(f'<a href="https://wa.me/6283114444424?text=Halo%20IC%20Dwi" target="_blank" class="plain-link">❓ Lupa Password? Hubungi IC Dwi</a>', unsafe_allow_html=True)
-        with tab_up:
-            with st.form("frm_daftar"):
-                nu, np = st.text_input("Username Baru").strip(), st.text_input("Password Baru", type="password")
-                if st.form_submit_button("Daftar Sekarang", use_container_width=True):
-                    if nu and np:
-                        if get_json_direct(get_user_id(nu)): st.error("Username sudah ada!")
-                        else:
-                            if upload_json({"username": nu, "password": hash_pass(np)}, get_user_id(nu)):
-                                st.success("Akun berhasil dibuat!")
-                    else: st.warning("Lengkapi data.")
 
 # --- 6. UTAMA ---
 def halaman_utama():
@@ -193,7 +185,6 @@ def halaman_utama():
         else:
             if st.button("🔒 Logout Admin"): st.session_state['admin_unlocked'] = False; st.rerun()
             t1, t2, t3 = st.tabs(["📊 Laporan", "👥 User & Log", "🚀 Migrasi"])
-            
             with t1:
                 all_data = get_json_direct(DATA_DB_PATH)
                 if all_data:
@@ -202,21 +193,26 @@ def halaman_utama():
                     ft, fn = c1.text_input("Cari Kode Toko:"), c2.text_input("Cari No NRB:")
                     if ft: df = df[df['Kode_Toko'].str.contains(ft.upper(), na=False)]
                     if fn: df = df[df['No_NRB'].str.contains(fn, na=False)]
+                    
+                    # Gunakan enumerate untuk mendapatkan index unik (idx)
                     for idx, row in (df.head(5) if not (ft or fn) else df).iterrows():
                         with st.container(border=True):
                             ci, cd, c_del = st.columns([1, 3, 1])
                             ci.image(row['Foto'], width=150)
                             cd.write(f"**{row['Kode_Toko']} - NRB {row['No_NRB']}**")
                             cd.caption(f"User: {row['User']} | Upload: {row['Waktu_Input']}")
-                            # Fix Syntax: Gunakan kutip ganda untuk f-string luar
+                            
+                            # --- FIX SYNTAX ERROR & DOWNLOAD LINK ---
                             clean_name = f"{row['Kode_Toko']}_{row['No_NRB']}_{row['Tanggal_NRB']}"
                             dl_link = row['Foto'].replace('/upload/', f'/upload/fl_attachment:{clean_name}/')
                             st.markdown(f"[📥 Download Foto]({dl_link})")
-                            if c_del.button("🗑️", key=f"del_{row['Waktu_Input']}"):
-                                if hapus_satu_file(row['Waktu_Input'], row['Foto']): st.success("Dihapus!"); st.rerun()
+                            
+                            # --- FIX DUPLICATE KEY: Tambahkan idx pada key ---
+                            if c_del.button("🗑️", key=f"del_{idx}_{row['Waktu_Input']}"):
+                                if hapus_satu_file(row['Waktu_Input'], row['Foto']): 
+                                    st.success("Dihapus!"); st.rerun()
                     st.divider()
-                    st.download_button("📥 Download Rekap Laporan (CSV)", df.to_csv(index=False), "Rekap_Laporan.csv")
-                else: st.info("Belum ada data.")
+                    st.download_button("📥 Download Rekap Laporan (CSV)", df.to_csv(index=False), "Rekap_Laporan_Rusak_Pabrik.csv")
 
             with t2:
                 col_reset, col_log = st.columns([1, 1.5])
@@ -233,8 +229,7 @@ def halaman_utama():
                         l_list = [{"Tanggal": t, "User": u, "Akses": c} for t, us in log_data.items() for u, c in us.items()]
                         df_log = pd.DataFrame(l_list).sort_values(by="Tanggal", ascending=False)
                         st.dataframe(df_log, use_container_width=True, hide_index=True)
-                        st.download_button("📥 Download Log Akses (CSV)", df_log.to_csv(index=False), "Log_Akses_User.csv", "text/csv", use_container_width=True)
-                    else: st.info("Data log tidak ditemukan.")
+                        st.download_button("📥 Download Log Akses (CSV)", df_log.to_csv(index=False), "Log_Akses_User_Rusak_Pabrik.csv", "text/csv")
 
             with t3:
                 if st.button("MIGRASI USER LAMA"):
