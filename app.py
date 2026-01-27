@@ -175,29 +175,82 @@ def halaman_utama():
     menu = st.radio("Menu:", ["📝 Input Laporan Baru", "🔐 Menu Admin (Rekap)"], horizontal=True)
     st.divider()
 
+    # --- MENU INPUT LAPORAN (DENGAN PDF & AUTO CLEAR) ---
     if menu == "📝 Input Laporan Baru":
+        
+        # FITUR PDF VIEWER
+        with st.expander("📄 Download / Lihat Format BA Rusak Pabrik (PDF)"):
+            if os.path.exists(NAMA_FILE_PDF):
+                with open(NAMA_FILE_PDF, "rb") as pdf_file:
+                    PDFbyte = pdf_file.read()
+                st.download_button(label="📥 Download Format BA (PDF)", data=PDFbyte, file_name="Format_BA.pdf", mime="application/pdf", use_container_width=True)
+                
+                base64_pdf = base64.b64encode(PDFbyte).decode('utf-8')
+                pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
+                st.markdown(pdf_display, unsafe_allow_html=True)
+            else:
+                st.warning("⚠️ File PDF belum diupload ke GitHub.")
+
+        st.write("")
+        st.subheader("Formulir Upload")
+
+        # Tampilkan Pesan Sukses (Persistence)
+        if 'pesan_sukses' in st.session_state and st.session_state['pesan_sukses']:
+            st.success(st.session_state['pesan_sukses'])
+            
+        # Inisialisasi Key Form untuk Auto Clear
+        if 'form_key' not in st.session_state: st.session_state['form_key'] = 0
+        key_now = st.session_state['form_key']
+
+        # Container Form
         with st.container(border=True):
             c1, c2 = st.columns(2)
-            kode, nrb = c1.text_input("Kode Toko", max_chars=4).upper(), c2.text_input("Nomor NRB")
-            tgl, foto = st.date_input("Tanggal NRB"), st.file_uploader("Upload Foto BA", type=['jpg','png','jpeg'])
+            kode = c1.text_input("Kode Toko", max_chars=4, key=f"k_{key_now}").upper()
+            nrb = c2.text_input("Nomor NRB", key=f"n_{key_now}")
+            tgl = st.date_input("Tanggal NRB", key=f"t_{key_now}")
+            
+            st.markdown("---")
+            foto = st.file_uploader("Upload Foto BA", type=['jpg','png','jpeg'], key=f"f_{key_now}")
+            
+            # Live Preview
+            if foto:
+                st.info(f"Foto '{foto.name}' siap diupload.")
+                with st.expander("Lihat Preview"): st.image(foto, width=200)
+
             if st.button("Kirim Laporan", type="primary", use_container_width=True):
+                # Hapus pesan sukses lama
+                st.session_state['pesan_sukses'] = None
+                
                 if kode and nrb and foto:
                     with st.spinner("Mengirim..."):
-                        tgl_s, bln = tgl.strftime("%d%m%Y"), datetime.now().strftime("%Y-%m")
-                        nama_f = f"{kode}_{nrb.replace(' ', '_')}_{tgl_s}_{random.randint(100,999)}"
-                        res = cloudinary.uploader.upload(foto, public_id=f"{FOTO_FOLDER}/{bln}/{nama_f}", transformation=[{'width': 1000, 'quality': 'auto'}])
-                        entri = {
-                            "Waktu_Input": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "Bulan_Upload": bln, "User": st.session_state['user_login'],
-                            "Kode_Toko": kode, "No_NRB": nrb, "Tanggal_NRB": str(tgl), "Foto": res.get('secure_url')
-                        }
-                        data_db = get_json_direct(DATA_DB_PATH) or []
-                        data_db.append(entri)
-                        if upload_json(data_db, DATA_DB_PATH):
-                            st.toast("Upload BA Berhasil!", icon="✅")
-                            time.sleep(5); st.rerun()
+                        try:
+                            tgl_s, bln = tgl.strftime("%d%m%Y"), datetime.now().strftime("%Y-%m")
+                            nama_f = f"{kode}_{nrb.replace(' ', '_')}_{tgl_s}_{random.randint(100,999)}"
+                            
+                            # Upload Foto
+                            res = cloudinary.uploader.upload(foto, public_id=f"{FOTO_FOLDER}/{bln}/{nama_f}", transformation=[{'width': 1000, 'quality': 'auto'}])
+                            
+                            # Simpan Data
+                            entri = {
+                                "Waktu_Input": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "Bulan_Upload": bln, "User": st.session_state['user_login'],
+                                "Kode_Toko": kode, "No_NRB": nrb, "Tanggal_NRB": str(tgl), "Foto": res.get('secure_url')
+                            }
+                            data_db = get_json_direct(DATA_DB_PATH) or []
+                            data_db.append(entri)
+                            upload_json(data_db, DATA_DB_PATH)
+                            
+                            # Sukses & Reset Form
+                            st.success(f"✅ Berhasil! Laporan NRB {nrb} (Toko {kode}) telah tersimpan.")
+                            time.sleep(3) 
+                            st.session_state['pesan_sukses'] = f"✅ Data NRB {nrb} sudah masuk database."
+                            st.session_state['form_key'] += 1 # Ganti key -> Form reset
+                            st.rerun()
+                            
+                        except Exception as e: st.error(f"Gagal: {e}")
                 else: st.warning("Lengkapi data.")
 
+    # --- MENU 2: ADMIN PANEL ---
     elif menu == "🔐 Menu Admin (Rekap)":
         if not st.session_state.get('admin_unlocked'):
             pw = st.text_input("Admin Password", type="password")
@@ -273,7 +326,6 @@ def halaman_utama():
                     if st.button("Update Password"):
                         if ut and pn:
                             if upload_json({"username": ut, "password": hash_pass(pn)}, get_user_id(ut)):
-                                # --- FITUR BARU: PESAN SUKSES 5 DETIK ---
                                 st.success("Ubah password sukses")
                                 time.sleep(5)
                                 st.rerun()
