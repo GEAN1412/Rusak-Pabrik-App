@@ -155,6 +155,7 @@ def halaman_login():
                     if user_data and user_data.get('password') == hash_pass(p):
                         st.session_state['user_login'] = u
                         catat_login_activity(u)
+                        st.balloons()
                         st.toast(f"Selamat datang, {u}!", icon="👋")
                         time.sleep(3); st.rerun()
                     else: st.error("Username atau Password Salah!")
@@ -237,7 +238,8 @@ def halaman_utama():
                             data_db = get_json_direct(DATA_DB_PATH) or []
                             data_db.append(entri)
                             upload_json(data_db, DATA_DB_PATH)
-                            
+
+                            st.balloons()
                             st.success(f"✅ Berhasil! Laporan NRB {nrb} (Toko {kode}) telah tersimpan.")
                             time.sleep(3) 
                             st.session_state['pesan_sukses'] = f"✅ Data NRB {nrb} sudah masuk database."
