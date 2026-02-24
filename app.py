@@ -12,7 +12,7 @@ import time
 import random
 import base64
 import os
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta
 
 # --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(
@@ -34,14 +34,16 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. KONFIGURASI PATH ---
+# --- 3. KONFIGURASI PATH & LINK ---
 USER_FOLDER = "RusakPabrikApp/Users"
 DATA_DB_PATH = "RusakPabrikApp/data_laporan_rusak_pabrik.json"
 LOG_DB_PATH = "RusakPabrikApp/user_activity_rusak_pabrik.json"
 FOTO_FOLDER = "RusakPabrikApp/Foto"
-OLD_USER_DB = "RusakPabrikApp/user_rusak_pabrik.json"
 ADMIN_PASSWORD_ACCESS = "icnbr034"  
 NAMA_FILE_PDF = "format_ba.pdf"
+
+# [PENTING] GANTI LINK INI DENGAN LINK FOTO CONTOH DI CLOUDINARY ANDA
+URL_CONTOH_FOTO_BA = "https://res.cloudinary.com/ddtgzywhh/image/upload/v1771939732/Format_Upload_BA_Yang_Benar_z6mwxt.jpg" 
 
 # --- 4. CORE FUNCTIONS ---
 def init_cloudinary():
@@ -157,7 +159,7 @@ def halaman_login():
                         catat_login_activity(u)
                         st.balloons()
                         st.toast(f"Selamat datang, {u}!", icon="👋")
-                        time.sleep(3); st.rerun()
+                        time.sleep(2.5); st.rerun()
                     else: st.error("Username atau Password Salah!")
             st.markdown(f'<a href="https://wa.me/6283114444424?text=Halo%20IC%20Dwi" target="_blank" class="plain-link">❓ Lupa Password? Hubungi IC Dwi</a>', unsafe_allow_html=True)
         with tab_up:
@@ -181,10 +183,11 @@ def halaman_utama():
     menu = st.radio("Menu:", ["📝 Input Laporan Baru", "🔐 Menu Admin (Rekap)"], horizontal=True)
     st.divider()
 
+    # --- MENU INPUT LAPORAN ---
     if menu == "📝 Input Laporan Baru":
         
         # Fitur PDF
-        with st.expander("📄 Download / Lihat Format BA Rusak Pabrik (PDF)"):
+        with st.expander("📄 Download / Lihat File PDF Format BA"):
             if os.path.exists(NAMA_FILE_PDF):
                 with open(NAMA_FILE_PDF, "rb") as pdf_file:
                     PDFbyte = pdf_file.read()
@@ -199,7 +202,7 @@ def halaman_utama():
         st.write("")
         st.subheader("Formulir Upload")
 
-        # Pesan Sukses
+        # Pesan Sukses Persistent
         if 'pesan_sukses' in st.session_state and st.session_state['pesan_sukses']:
             st.success(st.session_state['pesan_sukses'])
             
@@ -213,11 +216,24 @@ def halaman_utama():
             tgl = st.date_input("Tanggal NRB", key=f"t_{key_now}")
             
             st.markdown("---")
+            
+            # --- [FITUR BARU] CONTOH FOTO ---
+            # Diletakkan di atas tombol upload agar terlihat user
+            with st.expander("🖼️ Lihat Contoh Foto BA yang Benar (Klik disini)"):
+                c_ex_img, c_ex_txt = st.columns([1, 1])
+                with c_ex_img:
+                    # Gambar dari Link Cloudinary
+                    st.image(URL_CONTOH_FOTO_BA, caption="Contoh Upload BA Rusak Pabrik Yang Benar!", use_container_width=True)
+                with c_ex_txt:
+                    st.info("Pastikan foto terlihat jelas, tidak blur, dan mencakup seluruh halaman Berita Acara dan keterangan diisi semua!.")
+
+            st.write("") # Spasi
             foto = st.file_uploader("Upload Foto BA", type=['jpg','png','jpeg'], key=f"f_{key_now}")
             
+            # Live Preview
             if foto:
                 st.info(f"Foto '{foto.name}' siap diupload.")
-                with st.expander("Lihat Preview"): st.image(foto, width=200)
+                with st.expander("Lihat Preview Foto Anda"): st.image(foto, width=200)
 
             if st.button("Kirim Laporan", type="primary", use_container_width=True):
                 st.session_state['pesan_sukses'] = None
@@ -238,17 +254,17 @@ def halaman_utama():
                             data_db = get_json_direct(DATA_DB_PATH) or []
                             data_db.append(entri)
                             upload_json(data_db, DATA_DB_PATH)
-
+                            
                             st.balloons()
-                            st.success(f"✅ Berhasil! Laporan NRB {nrb} (Toko {kode}) telah tersimpan.")
-                            time.sleep(3) 
-                            st.session_state['pesan_sukses'] = f"✅ Data NRB {nrb} sudah masuk database."
-                            st.session_state['form_key'] += 1 # Ganti key -> Form reset
+                            st.session_state['pesan_sukses'] = f"✅ Berhasil! NRB {nrb} dari {kode} tersimpan."
+                            st.session_state['form_key'] += 1
+                            time.sleep(3)
                             st.rerun()
                             
                         except Exception as e: st.error(f"Gagal: {e}")
                 else: st.warning("Lengkapi data.")
 
+    # --- MENU ADMIN ---
     elif menu == "🔐 Menu Admin (Rekap)":
         if not st.session_state.get('admin_unlocked'):
             pw = st.text_input("Admin Password", type="password")
@@ -256,20 +272,16 @@ def halaman_utama():
                 if pw == ADMIN_PASSWORD_ACCESS: st.session_state['admin_unlocked'] = True; st.rerun()
         else:
             if st.button("🔒 Logout Admin"): st.session_state['admin_unlocked'] = False; st.rerun()
-            t1, t2, t3 = st.tabs(["📊 Laporan & Download", "👥 User & Log", "🚀 Migrasi"])
+            t1, t2, t3 = st.tabs(["📊 Laporan & Filter", "👥 User & Log", "🚀 Migrasi"])
             
-            # --- TAB 1: LAPORAN (DENGAN FILTER TANGGAL) ---
             with t1:
                 all_data = get_json_direct(DATA_DB_PATH)
                 if all_data:
                     df = pd.DataFrame(all_data)
-                    # Konversi ke Datetime untuk Filter
-                    df['Tanggal_NRB'] = pd.to_datetime(df['Tanggal_NRB']).dt.date
+                    df['Tanggal_Obj'] = pd.to_datetime(df['Tanggal_NRB'], errors='coerce').dt.date
                     df = df.sort_values(by="Waktu_Input", ascending=False)
                     
-                    st.markdown("### 🔍 Filter Laporan")
-                    
-                    # --- FITUR TANGGAL (BARU) ---
+                    st.markdown("### 🔍 Filter Data")
                     col_d1, col_d2 = st.columns(2)
                     today = datetime.now().date()
                     start_def = today.replace(day=1)
@@ -279,24 +291,20 @@ def halaman_utama():
 
                     c1, c2 = st.columns(2)
                     ft, fn = c1.text_input("Cari Kode Toko:"), c2.text_input("Cari No NRB:")
-
-                    # --- LOGIKA FILTER ---
-                    mask = (df['Tanggal_NRB'] >= start_date) & (df['Tanggal_NRB'] <= end_date)
+                    
+                    mask = (df['Tanggal_Obj'] >= start_date) & (df['Tanggal_Obj'] <= end_date)
                     if ft: mask &= df['Kode_Toko'].str.contains(ft.upper(), na=False)
                     if fn: mask &= df['No_NRB'].str.contains(fn, na=False)
                     
                     df_filtered = df[mask]
-                    
                     st.info(f"📋 Ditemukan {len(df_filtered)} data (Periode: {start_date} s.d {end_date})")
                     
-                    # Loop tampilan data (Limit 5 biar ringan, tapi download tetap semua)
                     for idx, row in df_filtered.head(5).iterrows():
                         with st.container(border=True):
                             ci, cd, c_del = st.columns([1, 3, 1.2])
                             ci.image(row['Foto'], width=150)
                             cd.write(f"**{row['Kode_Toko']} - NRB {row['No_NRB']}**")
-                            cd.caption(f"User: {row['User']} | Tgl NRB: {row['Tanggal_NRB']}")
-                            
+                            cd.caption(f"User: {row['User']} | Tgl: {row['Tanggal_NRB']}")
                             cl_n = f"{row['Kode_Toko']}_{row['No_NRB']}_{row['Tanggal_NRB']}"
                             dl_l = row['Foto'].replace('/upload/', f'/upload/fl_attachment:{cl_n}/')
                             cd.markdown(f"[📥 Download Foto]({dl_l})")
@@ -306,7 +314,7 @@ def halaman_utama():
                                 c_del.warning("Hapus?")
                                 if c_del.button("YA", key=f"y_{idx}"):
                                     if hapus_satu_file(row['Waktu_Input'], row['Foto']):
-                                        st.session_state[k_c] = False; st.toast("Terhapus!"); st.rerun()
+                                        st.session_state[k_c] = False; st.success("Terhapus!"); time.sleep(2); st.rerun()
                                 if c_del.button("TIDAK", key=f"n_{idx}"):
                                     st.session_state[k_c] = False; st.rerun()
                             else:
@@ -314,35 +322,24 @@ def halaman_utama():
                                     st.session_state[k_c] = True; st.rerun()
                     
                     st.divider()
+                    fname = f"Rekap_{start_date}_sd_{end_date}.csv"
+                    st.download_button(f"📥 Download Rekap CSV ({len(df_filtered)} Data)", df_filtered.drop(columns=['Tanggal_Obj']).to_csv(index=False), fname, "text/csv", use_container_width=True)
                     
-                    # --- TOMBOL DOWNLOAD CSV SESUAI FILTER ---
-                    file_name = f"Rekap_{start_date}_sd_{end_date}.csv"
-                    st.download_button(
-                        f"📥 Download Rekap CSV ({len(df_filtered)} Data)", 
-                        df_filtered.to_csv(index=False), 
-                        file_name, 
-                        "text/csv", 
-                        use_container_width=True
-                    )
-                    
-                    # Hapus Bulanan
-                    with st.expander("🚨 Hapus Data Bulanan (Zona Bahaya)"):
+                    with st.expander("🚨 Hapus Data Bulanan"):
                         list_bln = sorted(list(set(df['Bulan_Upload'].tolist())), reverse=True)
                         target_bln = st.selectbox("Pilih Bulan Upload:", list_bln)
-                        if st.button(f"🔥 Mulai Proses Hapus Bulan {target_bln}"):
+                        if st.button(f"🔥 Mulai Hapus Bulan {target_bln}"):
                             st.session_state['confirm_bln'] = True
                         
                         if st.session_state.get('confirm_bln'):
-                            st.error(f"⚠️ Konfirmasi: Hapus total bulan {target_bln}?")
+                            st.error(f"⚠️ Yakin hapus data bulan {target_bln}?")
                             pass_input = st.text_input("Password:", type="password", key="pass_bulk")
-                            
                             if st.button("YA, SAYA YAKIN"):
                                 if pass_input == "123456":
                                     if hapus_data_bulanan(target_bln):
-                                        st.session_state['confirm_bln'] = False; st.toast("Terhapus!"); time.sleep(5); st.rerun()
-                                else: st.error("Password Salah!")
+                                        st.session_state['confirm_bln'] = False; st.success("Terhapus!"); time.sleep(2); st.rerun()
+                                else: st.error("Salah!")
                             if st.button("BATAL"): st.session_state['confirm_bln'] = False; st.rerun()
-
                 else: st.info("Tidak ada data.")
 
             with t2:
@@ -352,12 +349,11 @@ def halaman_utama():
                     ut, pn = st.text_input("Username"), st.text_input("Pass Baru", type="password")
                     if st.button("Update Password"):
                         if ut and pn:
-                            if upload_json({"username": ut, "password": hash_pass(pn)}, get_user_id(ut)):
-                                st.success("Ubah password sukses")
-                                time.sleep(5)
-                                st.rerun()
-                        else:
-                            st.warning("Isi data.")
+                            if get_json_direct(get_user_id(ut)):
+                                upload_json({"username": ut, "password": hash_pass(pn)}, get_user_id(ut))
+                                st.success("Ubah password sukses"); time.sleep(2); st.rerun()
+                            else: st.error("User tidak ditemukan!")
+                        else: st.warning("Lengkapi data.")
 
                 with col_l:
                     st.write("#### 🕵️ Monitoring Akses")
@@ -367,6 +363,7 @@ def halaman_utama():
                         df_l = pd.DataFrame(l_list).sort_values(by="Tanggal", ascending=False)
                         st.dataframe(df_l, use_container_width=True, hide_index=True)
                         st.download_button("📥 Download Log CSV", df_l.to_csv(index=False), "Log_Akses.csv", "text/csv", use_container_width=True)
+                    else: st.info("Belum ada log.")
 
             with t3:
                 st.write("#### 🚀 Migrasi Sistem")
