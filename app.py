@@ -225,10 +225,10 @@ def halaman_utama():
                     # Gambar dari Link Cloudinary
                     st.image(URL_CONTOH_FOTO_BA, caption="Contoh Upload BA Rusak Pabrik Yang Benar!", use_container_width=True)
                 with c_ex_txt:
-                    st.info("Pastikan foto terlihat jelas, tidak blur, dan mencakup seluruh halaman Berita Acara dan keterangan diisi semua!.")
+                    st.info("Pastikan foto terlihat jelas, tidak blur, dan mencakup seluruh halaman Berita Acara dan keterangan diisi semua!.Jika BA ditulis manual pastikan sesuai contoh format BA!")
 
             st.write("") # Spasi
-            foto = st.file_uploader("Upload Foto BA", type=['jpg','png','jpeg'], key=f"f_{key_now}")
+            foto = st.file_uploader("Upload Foto BA dibawah, pastikan sesuai dengan contoh diatas!", type=['jpg','png','jpeg'], key=f"f_{key_now}")
             
             # Live Preview
             if foto:
