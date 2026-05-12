@@ -1,27 +1,12 @@
 import streamlit as st
-import pandas as pd
 import os
 import base64
 import time
 import random
 from datetime import datetime
-import cloudinary
-import cloudinary.uploader
+import pandas as pd
+# Pastikan library lain yang Anda butuhkan (seperti cloudinary, json, dll) tetap di-import di bagian atas skrip Anda.
 
-# --- 2. CSS & STYLE ---
-st.markdown("""
-    <style>
-    [data-testid="stToolbar"] {visibility: hidden; display: none !important;}
-    [data-testid="stDecoration"] {visibility: hidden; display: none !important;}
-    footer {visibility: hidden; display: none;}
-    .main .block-container {padding-top: 2rem;}
-    div[data-testid="stForm"] button { background-color: #28a745 !important; color: white !important; font-weight: bold !important; }
-    .plain-link { display: block; text-align: center; margin-top: 15px; color: #888888; text-decoration: none; font-size: 0.9em; cursor: pointer; }
-    .plain-link:hover { color: #28a745; text-decoration: underline; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- MAIN APP ---
 st.title("🏭 Sistem Rusak Pabrik")
 menu = st.radio("Menu:", ["📝 Input Laporan Baru", "🔐 Menu Admin (Rekap)"], horizontal=True)
 st.divider()
@@ -61,16 +46,14 @@ if menu == "📝 Input Laporan Baru":
         st.markdown("---")
         
         # --- [FITUR BARU] CONTOH FOTO ---
-        # Diletakkan di atas tombol upload agar terlihat user
         with st.expander("🖼️ Lihat Contoh Foto BA yang Benar (Klik disini)"):
             c_ex_img, c_ex_txt = st.columns([1, 1])
             with c_ex_img:
-                # Gambar dari Link Cloudinary
                 st.image(URL_CONTOH_FOTO_BA, caption="Contoh Upload BA Rusak Pabrik Yang Benar!", use_container_width=True)
             with c_ex_txt:
                 st.info("Pastikan foto terlihat jelas, tidak blur, dan mencakup seluruh halaman Berita Acara dan keterangan diisi semua!.Jika BA ditulis manual pastikan sesuai contoh format BA!")
 
-        st.write("") # Spasi
+        st.write("") 
         foto = st.file_uploader("Upload Foto BA dibawah, pastikan sesuai dengan contoh diatas!Pastikan Fisik BA, NRB, Fisik Dikirim ke DC!", type=['jpg','png','jpeg'], key=f"f_{key_now}")
         
         # Live Preview
@@ -91,7 +74,8 @@ if menu == "📝 Input Laporan Baru":
                         
                         entri = {
                             "Waktu_Input": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "Bulan_Upload": bln,
+                            "Bulan_Upload": bln, 
+                            "User": "Anonim", # Diubah agar tidak error karena tidak ada login
                             "Kode_Toko": kode, "No_NRB": nrb, "Tanggal_NRB": str(tgl), "Foto": res.get('secure_url')
                         }
                         data_db = get_json_direct(DATA_DB_PATH) or []
@@ -115,7 +99,9 @@ elif menu == "🔐 Menu Admin (Rekap)":
             if pw == ADMIN_PASSWORD_ACCESS: st.session_state['admin_unlocked'] = True; st.rerun()
     else:
         if st.button("🔒 Logout Admin"): st.session_state['admin_unlocked'] = False; st.rerun()
-        t1, t2 = st.tabs(["📊 Laporan & Filter", "🚀 Migrasi"])
+        
+        # Tab User & Log dihapus, Tab Migrasi bergeser ke t2
+        t1, t2 = st.tabs(["📊 Laporan & Filter", "🚀 Migrasi Cloud"])
         
         with t1:
             all_data = get_json_direct(DATA_DB_PATH)
@@ -147,7 +133,7 @@ elif menu == "🔐 Menu Admin (Rekap)":
                         ci, cd, c_del = st.columns([1, 3, 1.2])
                         ci.image(row['Foto'], width=150)
                         cd.write(f"**{row['Kode_Toko']} - NRB {row['No_NRB']}**")
-                        cd.caption(f"Tgl: {row['Tanggal_NRB']}")
+                        cd.caption(f"Tgl: {row['Tanggal_NRB']}") # Menghapus keterangan User karena login dihilangkan
                         cl_n = f"{row['Kode_Toko']}_{row['No_NRB']}_{row['Tanggal_NRB']}"
                         dl_l = row['Foto'].replace('/upload/', f'/upload/fl_attachment:{cl_n}/')
                         cd.markdown(f"[📥 Download Foto]({dl_l})")
@@ -178,15 +164,16 @@ elif menu == "🔐 Menu Admin (Rekap)":
                         st.error(f"⚠️ Yakin hapus data bulan {target_bln}?")
                         pass_input = st.text_input("Password:", type="password", key="pass_bulk")
                         if st.button("YA, SAYA YAKIN"):
-                            if pass_input == "123456":
+                            if pass_input == "123456": # Sesuaikan dengan password bulk delete Anda jika perlu
                                 if hapus_data_bulanan(target_bln):
                                     st.session_state['confirm_bln'] = False; st.success("Terhapus!"); time.sleep(2); st.rerun()
                             else: st.error("Salah!")
                         if st.button("BATAL"): st.session_state['confirm_bln'] = False; st.rerun()
             else: st.info("Tidak ada data.")
 
+        # Tab Migrasi Foto dipertahankan, migrasi user dihapus
         with t2:
-            st.write("#### 🚀 Migrasi Sistem")
+            st.write("#### 🚀 Migrasi Foto Cloud")
             if st.button("MIGRASI FOTO DI CLOUD"):
                 with st.spinner("Sinkronisasi..."):
                     s, p = migrasi_foto_cloud()
