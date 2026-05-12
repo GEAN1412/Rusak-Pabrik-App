@@ -8,12 +8,20 @@ from datetime import datetime
 import cloudinary
 import cloudinary.uploader
 
-# --- PENTING: PASTIKAN FUNGSI DAN VARIABEL DI BAWAH INI TETAP ADA DI FILE ANDA ---
-# (Pastikan fungsi get_json_direct, upload_json, hapus_satu_file, hapus_data_bulanan, migrasi_foto_cloud sudah ada)
+# --- KONFIGURASI (ISI SESUAI SETTINGAN ASLI ANDA) ---
+NAMA_FILE_PDF = "Format_BA.pdf"          # Ganti dengan nama file PDF Anda
+URL_CONTOH_FOTO_BA = "https://res.cloudinary.com/..." # Ganti dengan link foto Anda
+DATA_DB_PATH = "data_laporan.json"       # Ganti dengan path database json Anda
+FOTO_FOLDER = "folder_ba"                # Ganti dengan nama folder di cloudinary Anda
+ADMIN_PASSWORD_ACCESS = "123456"         # Ganti dengan password admin Anda
 
-# --- KONFIGURASI CSS & PAGE ---
+# --- FUNGSI HELPER (PASTIKAN FUNGSI INI TETAP ADA DI BAWAH INI) ---
+# Saya asumsikan Anda memiliki fungsi ini di file Anda atau di import
+# Jika tidak ada, fungsi-fungsi ini harus didefinisikan agar aplikasi tidak error
+# get_json_direct, upload_json, hapus_satu_file, hapus_data_bulanan, migrasi_foto_cloud
+
+# --- CONFIGURASI & CSS ---
 st.set_page_config(page_title="Sistem Rusak Pabrik", layout="centered", page_icon="🏭")
-
 st.markdown("""
     <style>
     .stApp { background-color: #f5f7f9; }
@@ -39,12 +47,11 @@ if menu == "📝 Input Laporan Baru":
             pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
             st.markdown(pdf_display, unsafe_allow_html=True)
         else:
-            st.warning("⚠️ File PDF belum diupload ke GitHub.")
+            st.warning("⚠️ File PDF belum diupload ke GitHub / Path salah.")
 
     st.write("")
     st.subheader("Formulir Upload")
 
-    # Pesan Sukses Persistent
     if 'pesan_sukses' in st.session_state and st.session_state['pesan_sukses']:
         st.success(st.session_state['pesan_sukses'])
         
@@ -64,10 +71,10 @@ if menu == "📝 Input Laporan Baru":
             with c_ex_img:
                 st.image(URL_CONTOH_FOTO_BA, caption="Contoh Upload BA Rusak Pabrik Yang Benar!", use_container_width=True)
             with c_ex_txt:
-                st.info("Pastikan foto terlihat jelas, tidak blur, dan mencakup seluruh halaman Berita Acara dan keterangan diisi semua!.Jika BA ditulis manual pastikan sesuai contoh format BA!")
+                st.info("Pastikan foto terlihat jelas, tidak blur, dan mencakup seluruh halaman Berita Acara!")
 
         st.write("") 
-        foto = st.file_uploader("Upload Foto BA dibawah, pastikan sesuai dengan contoh diatas!Pastikan Fisik BA, NRB, Fisik Dikirim ke DC!", type=['jpg','png','jpeg'], key=f"f_{key_now}")
+        foto = st.file_uploader("Upload Foto BA dibawah, pastikan sesuai dengan contoh diatas!", type=['jpg','png','jpeg'], key=f"f_{key_now}")
         
         if foto:
             st.info(f"Foto '{foto.name}' siap diupload.")
@@ -75,20 +82,16 @@ if menu == "📝 Input Laporan Baru":
 
         if st.button("Kirim Laporan", type="primary", use_container_width=True):
             st.session_state['pesan_sukses'] = None
-            
             if kode and nrb and foto:
                 with st.spinner("Mengirim..."):
                     try:
                         tgl_s, bln = tgl.strftime("%d%m%Y"), datetime.now().strftime("%Y-%m")
                         nama_f = f"{kode}_{nrb.replace(' ', '_')}_{tgl_s}_{random.randint(100,999)}"
-                        
                         res = cloudinary.uploader.upload(foto, public_id=f"{FOTO_FOLDER}/{bln}/{nama_f}", transformation=[{'width': 1000, 'quality': 'auto'}])
                         
-                        # DATA DICTIONARY (User dihapus)
                         entri = {
                             "Waktu_Input": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "Bulan_Upload": bln,
-                            "Kode_Toko": kode, "No_NRB": nrb, "Tanggal_NRB": str(tgl), "Foto": res.get('secure_url')
+                            "Bulan_Upload": bln, "Kode_Toko": kode, "No_NRB": nrb, "Tanggal_NRB": str(tgl), "Foto": res.get('secure_url')
                         }
                         data_db = get_json_direct(DATA_DB_PATH) or []
                         data_db.append(entri)
@@ -99,7 +102,6 @@ if menu == "📝 Input Laporan Baru":
                         st.session_state['form_key'] += 1
                         time.sleep(3)
                         st.rerun()
-                        
                     except Exception as e: st.error(f"Gagal: {e}")
             else: st.warning("Lengkapi data.")
 
@@ -112,7 +114,6 @@ elif menu == "🔐 Menu Admin (Rekap)":
     else:
         if st.button("🔒 Logout Admin"): st.session_state['admin_unlocked'] = False; st.rerun()
         
-        # TAB DIKURANGI (Hanya Laporan & Migrasi)
         t1, t2 = st.tabs(["📊 Laporan & Filter", "🚀 Migrasi"])
         
         with t1:
@@ -138,7 +139,7 @@ elif menu == "🔐 Menu Admin (Rekap)":
                 if fn: mask &= df['No_NRB'].str.contains(fn, na=False)
                 
                 df_filtered = df[mask]
-                st.info(f"📋 Ditemukan {len(df_filtered)} data (Periode: {start_date} s.d {end_date})")
+                st.info(f"📋 Ditemukan {len(df_filtered)} data")
                 
                 for idx, row in df_filtered.head(5).iterrows():
                     with st.container(border=True):
@@ -164,7 +165,7 @@ elif menu == "🔐 Menu Admin (Rekap)":
                 
                 st.divider()
                 fname = f"Rekap_{start_date}_sd_{end_date}.csv"
-                st.download_button(f"📥 Download Rekap CSV ({len(df_filtered)} Data)", df_filtered.drop(columns=['Tanggal_Obj']).to_csv(index=False), fname, "text/csv", use_container_width=True)
+                st.download_button(f"📥 Download Rekap CSV", df_filtered.drop(columns=['Tanggal_Obj']).to_csv(index=False), fname, "text/csv", use_container_width=True)
                 
                 with st.expander("🚨 Hapus Data Bulanan"):
                     list_bln = sorted(list(set(df['Bulan_Upload'].tolist())), reverse=True)
@@ -185,7 +186,6 @@ elif menu == "🔐 Menu Admin (Rekap)":
 
         with t2:
             st.write("#### 🚀 Migrasi Sistem")
-            # Fitur Migrasi User dihapus, hanya menyisakan migrasi foto
             if st.button("MIGRASI FOTO DI CLOUD"):
                 with st.spinner("Sinkronisasi..."):
                     s, p = migrasi_foto_cloud()
