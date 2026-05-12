@@ -20,12 +20,16 @@ ADMIN_PASSWORD_ACCESS = "123456"         # Ganti dengan password admin Anda
 # Jika tidak ada, fungsi-fungsi ini harus didefinisikan agar aplikasi tidak error
 # get_json_direct, upload_json, hapus_satu_file, hapus_data_bulanan, migrasi_foto_cloud
 
-# --- CONFIGURASI & CSS ---
-st.set_page_config(page_title="Sistem Rusak Pabrik", layout="centered", page_icon="🏭")
+# --- 2. CSS & STYLE ---
 st.markdown("""
     <style>
-    .stApp { background-color: #f5f7f9; }
-    .stButton>button { width: 100%; }
+    [data-testid="stToolbar"] {visibility: hidden; display: none !important;}
+    [data-testid="stDecoration"] {visibility: hidden; display: none !important;}
+    footer {visibility: hidden; display: none;}
+    .main .block-container {padding-top: 2rem;}
+    div[data-testid="stForm"] button { background-color: #28a745 !important; color: white !important; font-weight: bold !important; }
+    .plain-link { display: block; text-align: center; margin-top: 15px; color: #888888; text-decoration: none; font-size: 0.9em; cursor: pointer; }
+    .plain-link:hover { color: #28a745; text-decoration: underline; }
     </style>
     """, unsafe_allow_html=True)
 
