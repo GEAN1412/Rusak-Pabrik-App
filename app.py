@@ -219,4 +219,87 @@ def main():
             if st.button("Buka Panel"):
                 if pw == ADMIN_PASSWORD_ACCESS: st.session_state['admin_unlocked'] = True; st.rerun()
         else:
-            if st.button("🔒 Logout Admin"): st.session_state['ad
+            if st.button("🔒 Logout Admin"): st.session_state['admin_unlocked'] = False; st.rerun()
+            
+            # Tab dikurangi menjadi 2 (Laporan dan Migrasi Cloud)
+            t1, t2 = st.tabs(["📊 Laporan & Filter", "🚀 Migrasi Cloud"])
+            
+            with t1:
+                all_data = get_json_direct(DATA_DB_PATH)
+                if all_data:
+                    df = pd.DataFrame(all_data)
+                    df['Tanggal_Obj'] = pd.to_datetime(df['Tanggal_NRB'], errors='coerce').dt.date
+                    df = df.sort_values(by="Waktu_Input", ascending=False)
+                    
+                    st.markdown("### 🔍 Filter Data")
+                    col_d1, col_d2 = st.columns(2)
+                    today = datetime.now().date()
+                    start_def = today.replace(day=1)
+                    
+                    with col_d1: start_date = st.date_input("Dari Tanggal:", value=start_def)
+                    with col_d2: end_date = st.date_input("Sampai Tanggal:", value=today)
+
+                    c1, c2 = st.columns(2)
+                    ft, fn = c1.text_input("Cari Kode Toko:"), c2.text_input("Cari No NRB:")
+                    
+                    mask = (df['Tanggal_Obj'] >= start_date) & (df['Tanggal_Obj'] <= end_date)
+                    if ft: mask &= df['Kode_Toko'].str.contains(ft.upper(), na=False)
+                    if fn: mask &= df['No_NRB'].str.contains(fn, na=False)
+                    
+                    df_filtered = df[mask]
+                    st.info(f"📋 Ditemukan {len(df_filtered)} data (Periode: {start_date} s.d {end_date})")
+                    
+                    for idx, row in df_filtered.head(5).iterrows():
+                        with st.container(border=True):
+                            ci, cd, c_del = st.columns([1, 3, 1.2])
+                            ci.image(row['Foto'], width=150)
+                            cd.write(f"**{row['Kode_Toko']} - NRB {row['No_NRB']}**")
+                            # Nama User dihilangkan pada caption
+                            cd.caption(f"Tgl: {row['Tanggal_NRB']}") 
+                            cl_n = f"{row['Kode_Toko']}_{row['No_NRB']}_{row['Tanggal_NRB']}"
+                            dl_l = row['Foto'].replace('/upload/', f'/upload/fl_attachment:{cl_n}/')
+                            cd.markdown(f"[📥 Download Foto]({dl_l})")
+                            
+                            k_c = f"del_confirm_{idx}_{row['Waktu_Input']}"
+                            if st.session_state.get(k_c):
+                                c_del.warning("Hapus?")
+                                if c_del.button("YA", key=f"y_{idx}"):
+                                    if hapus_satu_file(row['Waktu_Input'], row['Foto']):
+                                        st.session_state[k_c] = False; st.success("Terhapus!"); time.sleep(2); st.rerun()
+                                if c_del.button("TIDAK", key=f"n_{idx}"):
+                                    st.session_state[k_c] = False; st.rerun()
+                            else:
+                                if c_del.button("🗑️", key=f"b_{idx}"):
+                                    st.session_state[k_c] = True; st.rerun()
+                    
+                    st.divider()
+                    fname = f"Rekap_{start_date}_sd_{end_date}.csv"
+                    st.download_button(f"📥 Download Rekap CSV ({len(df_filtered)} Data)", df_filtered.drop(columns=['Tanggal_Obj']).to_csv(index=False), fname, "text/csv", use_container_width=True)
+                    
+                    with st.expander("🚨 Hapus Data Bulanan"):
+                        list_bln = sorted(list(set(df['Bulan_Upload'].tolist())), reverse=True)
+                        target_bln = st.selectbox("Pilih Bulan Upload:", list_bln)
+                        if st.button(f"🔥 Mulai Hapus Bulan {target_bln}"):
+                            st.session_state['confirm_bln'] = True
+                        
+                        if st.session_state.get('confirm_bln'):
+                            st.error(f"⚠️ Yakin hapus data bulan {target_bln}?")
+                            pass_input = st.text_input("Password:", type="password", key="pass_bulk")
+                            if st.button("YA, SAYA YAKIN"):
+                                if pass_input == "123456":
+                                    if hapus_data_bulanan(target_bln):
+                                        st.session_state['confirm_bln'] = False; st.success("Terhapus!"); time.sleep(2); st.rerun()
+                                else: st.error("Salah!")
+                            if st.button("BATAL"): st.session_state['confirm_bln'] = False; st.rerun()
+                else: st.info("Tidak ada data.")
+
+            with t2:
+                st.write("#### 🚀 Migrasi Sistem")
+                if st.button("MIGRASI FOTO DI CLOUD"):
+                    with st.spinner("Sinkronisasi..."):
+                        s, p = migrasi_foto_cloud()
+                        if s: st.success(p); time.sleep(3); st.rerun()
+                        else: st.error(p)
+
+if __name__ == "__main__":
+    main()
